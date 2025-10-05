@@ -4,7 +4,7 @@ Basic IdentiyNow MCP that is under active development
 
 ## Features
 
-This provide basis functionlaity to
+This provide basis functionality to
 
 - Search for an Identity
 - Find their
@@ -26,7 +26,7 @@ This extension contributes the following settings:
 
 - `identityNowMCP.baseUrl`: IdentityNow Tentant API URL.
 - `identityNowMCP.clientId`: IdentityNow Client Id.
-- `identityNowMCP.clientId`: IdentityNow Client Secret.
+- `identityNowMCP.clientSecret`: IdentityNow Client Secret.
 
 ## Known Issues
 

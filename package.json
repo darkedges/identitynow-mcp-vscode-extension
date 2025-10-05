@@ -17,7 +17,9 @@
     "iam",
     "model-context-protocol"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "*"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "configuration": {
@@ -43,10 +45,14 @@
     },
     "mcpServerDefinitionProviders": [
       {
-        "id": "darkedges.identitynow_provider",
+        "id": "darkedges.identitynow-mcp",
         "label": "IdentityNow MCP"
       }
     ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/darkedges/identitynow-mcp-vscode-extension.git"
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
@@ -61,15 +67,15 @@
     "node-fetch": "^3.3.2"
   },
   "devDependencies": {
-    "@types/vscode": "^1.104.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
     "@types/node-fetch": "^2.6.11",
+    "@types/vscode": "^1.104.0",
     "@typescript-eslint/eslint-plugin": "^8.39.0",
     "@typescript-eslint/parser": "^8.39.0",
-    "eslint": "^9.32.0",
-    "typescript": "^5.9.2",
     "@vscode/test-cli": "^0.0.11",
-    "@vscode/test-electron": "^2.5.2"
+    "@vscode/test-electron": "^2.5.2",
+    "eslint": "^9.32.0",
+    "typescript": "^5.9.2"
   }
 }
