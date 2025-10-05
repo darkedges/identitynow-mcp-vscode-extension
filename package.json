@@ -44,7 +44,7 @@
     "mcpServerDefinitionProviders": [
       {
         "id": "darkedges.identitynow_provider",
-        "label": "IdentityNow"
+        "label": "IdentityNow MCP"
       }
     ]
   },

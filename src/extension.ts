@@ -32,7 +32,6 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.window.showErrorMessage('Please configure the IdentityNow MCP extension with your SailPoint IdentityNow Base URL, Client ID, and Client Secret.');
         return undefined;
       }
-      vscode.window.showErrorMessage('Please configure the IdentityNow MCP extension with your SailPoint IdentityNow Base URL, Client ID, and Client Secret.');
 
       // Return undefined to indicate that the server should not be started or throw an error
       // If there is a pending tool call, the editor will cancel it and return an error message
@@ -43,4 +42,6 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 // This method is called when your extension is deactivated
-export function deactivate() { }
+export function deactivate() {
+  console.error('IdentityNow MCP extension is now deactivated!');
+}
