@@ -8,7 +8,9 @@ import {
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import fetch from "node-fetch";
+
+// Declare fetch as global (available in Node.js 18+)
+declare const fetch: typeof globalThis.fetch;
 
 // SailPoint API Configuration
 const SAILPOINT_BASE_URL = process.env.SAILPOINT_BASE_URL || "https://your-tenant.api.identitynow.com";
