@@ -10,7 +10,7 @@
   "categories": [
     "Other"
   ],
-    "keywords": [
+  "keywords": [
     "mcp",
     "sailpoint",
     "identitynow",
@@ -20,6 +20,27 @@
   "activationEvents": [],
   "main": "./out/extension.js",
   "contributes": {
+    "configuration": {
+      "title": "IdentityNow MCP",
+      "type": "object",
+      "properties": {
+        "identityNowMCP.baseUrl": {
+          "type": "string",
+          "default": "https://sailpoint.api.identitynow.com",
+          "description": "Base URL for the IdentityNow tenant"
+        },
+        "identityNowMCP.clientId": {
+          "type": "string",
+          "default": "",
+          "description": "Client Id for the IdentityNow tenant"
+        },
+        "identityNowMCP.clientSecret": {
+          "type": "string",
+          "default": "",
+          "description": "Client Secret for the IdentityNow tenant"
+        }
+      }
+    },
     "mcpServerDefinitionProviders": [
       {
         "id": "darkedges.identitynow_provider",

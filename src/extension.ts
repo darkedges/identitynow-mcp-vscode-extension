@@ -2,6 +2,7 @@ import path from 'path';
 import * as vscode from 'vscode';
 
 export function activate(context: vscode.ExtensionContext) {
+  const config = vscode.workspace.getConfiguration('identityNowMCP');
   const didChangeEmitter = new vscode.EventEmitter<void>();
   context.subscriptions.push(vscode.lm.registerMcpServerDefinitionProvider('darkedges.identitynow_provider', {
     onDidChangeMcpServerDefinitions: didChangeEmitter.event,
@@ -14,9 +15,9 @@ export function activate(context: vscode.ExtensionContext) {
           path.join(__dirname, '..', 'out', 'mcp.js')
         ],
         {
-          SAILPOINT_BASE_URL: '',
-          SAILPOINT_CLIENT_ID: '',
-          SAILPOINT_CLIENT_SECRET: ''
+          SAILPOINT_BASE_URL: config.get('baseUrl', ''),
+          SAILPOINT_CLIENT_ID: config.get('clientId', ''),
+          SAILPOINT_CLIENT_SECRET: config.get('clientSecret', '')
         },
         '1.0.1'
       ));
@@ -25,10 +26,9 @@ export function activate(context: vscode.ExtensionContext) {
     },
     resolveMcpServerDefinition: async (server: vscode.McpServerDefinition) => {
 
-      if (server.label === 'IdentityNow') {
-        const sailpointBaseUrl = await vscode.window.showInputBox({ prompt: 'Enter IdentityNow Tenant URL' });
-        const sailpointClientId = await vscode.window.showInputBox({ prompt: 'Enter IdentityNow Client Id' });
-        const sailpointClientSecret = await vscode.window.showInputBox({ prompt: 'Enter IdentityNow Client Secret' });
+      if (config.get('baseUrl', '') !== '' || config.get('clientId', '') !== '' || config.get('clientSecret', '') !== '') {
+        vscode.window.showErrorMessage('Please configure the IdentityNow MCP extension with your SailPoint IdentityNow Base URL, Client ID, and Client Secret.');
+        return undefined;
       }
 
       // Return undefined to indicate that the server should not be started or throw an error
