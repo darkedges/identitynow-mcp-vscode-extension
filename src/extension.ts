@@ -2,7 +2,9 @@ import path from 'path';
 import * as vscode from 'vscode';
 
 export function activate(context: vscode.ExtensionContext) {
+  console.error('IdentityNow MCP extension is now active!');
   const config = vscode.workspace.getConfiguration('identityNowMCP');
+  const extensionPath = vscode.extensions.getExtension('darkedges.identitynow_provider')?.extensionUri.fsPath || '';
   const didChangeEmitter = new vscode.EventEmitter<void>();
   context.subscriptions.push(vscode.lm.registerMcpServerDefinitionProvider('darkedges.identitynow_provider', {
     onDidChangeMcpServerDefinitions: didChangeEmitter.event,
@@ -12,7 +14,7 @@ export function activate(context: vscode.ExtensionContext) {
         'IdentityNow',
         'node',
         [
-          path.join(__dirname, '..', 'out', 'mcp.js')
+          path.join(extensionPath, '..', 'out', 'mcp.js')
         ],
         {
           SAILPOINT_BASE_URL: config.get('baseUrl', ''),
@@ -30,6 +32,7 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.window.showErrorMessage('Please configure the IdentityNow MCP extension with your SailPoint IdentityNow Base URL, Client ID, and Client Secret.');
         return undefined;
       }
+      vscode.window.showErrorMessage('Please configure the IdentityNow MCP extension with your SailPoint IdentityNow Base URL, Client ID, and Client Secret.');
 
       // Return undefined to indicate that the server should not be started or throw an error
       // If there is a pending tool call, the editor will cancel it and return an error message
