@@ -2,7 +2,8 @@
   "name": "identitynow-mcp",
   "displayName": "IdentityNow MCP",
   "description": "",
-  "type": "module",
+  "publisher": "darkedges",
+  "license": "MIT",
   "version": "0.0.1",
   "engines": {
     "vscode": "^1.104.0"
@@ -10,28 +11,58 @@
   "categories": [
     "Other"
   ],
-    "keywords": [
+  "keywords": [
     "mcp",
     "sailpoint",
     "identitynow",
     "iam",
     "model-context-protocol"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./out/extension.js",
   "contributes": {
+    "configuration": {
+      "title": "IdentityNow MCP",
+      "type": "object",
+      "properties": {
+        "identityNowMCP.baseUrl": {
+          "type": "string",
+          "default": "https://sailpoint.api.identitynow.com",
+          "description": "Base URL for the IdentityNow tenant"
+        },
+        "identityNowMCP.clientId": {
+          "type": "string",
+          "default": "",
+          "description": "Client Id for the IdentityNow tenant"
+        },
+        "identityNowMCP.clientSecret": {
+          "type": "string",
+          "default": "",
+          "description": "Client Secret for the IdentityNow tenant"
+        }
+      }
+    },
     "mcpServerDefinitionProviders": [
       {
-        "id": "darkedges.identitynow_provider",
-        "label": "IdentityNow"
+        "id": "darkedges.identitynow-mcp",
+        "label": "IdentityNow MCP"
       }
     ]
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/darkedges/identitynow-mcp-vscode-extension.git"
+  },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./",
-    "pretest": "npm run compile && npm run lint",
+    "compile": "npm run check-types && node esbuild.cjs",
+    "check-types": "tsc --noEmit",
+    "watch": "npm-run-all -p watch:*",
+    "watch:esbuild": "node esbuild.js --watch",
+    "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
+    "vscode:prepublish": "npm run package",
+    "package": "npm run lint && npm run check-types && node esbuild.cjs --production",
     "lint": "eslint src",
     "test": "vscode-test"
   },
@@ -40,15 +71,16 @@
     "node-fetch": "^3.3.2"
   },
   "devDependencies": {
-    "@types/vscode": "^1.104.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
     "@types/node-fetch": "^2.6.11",
+    "@types/vscode": "^1.104.0",
     "@typescript-eslint/eslint-plugin": "^8.39.0",
     "@typescript-eslint/parser": "^8.39.0",
-    "eslint": "^9.32.0",
-    "typescript": "^5.9.2",
     "@vscode/test-cli": "^0.0.11",
-    "@vscode/test-electron": "^2.5.2"
+    "@vscode/test-electron": "^2.5.2",
+    "esbuild": "^0.25.10",
+    "eslint": "^9.32.0",
+    "typescript": "^5.9.2"
   }
 }

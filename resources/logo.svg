@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<svg width="200"
+     height="200"
+     viewBox="0 0 200 200"
+     xmlns="http://www.w3.org/2000/svg">
+    <rect x="0"
+          y="0"
+          width="200"
+          height="200"
+          fill="#2D2D30" />
+    <path d="M100,50 A40,20 0 0,0 60,70 A30,15 0 0,0 30,85 A20,10 0 0,0 30,95 A30,15 0 0,0 60,110 L140,110 A30,15 0 0,0 170,95 A20,10 0 0,0 170,85 A30,15 0 0,0 140,70 A40,20 0 0,0 100,50 Z"
+          fill="#6A0DAD" />
+    <text x="100"
+          y="92"
+          font-family="Segoe UI, Arial, sans-serif"
+          font-size="30"
+          font-weight="bold"
+          fill="white"
+          text-anchor="middle"
+          alignment-baseline="middle">ISC</text>
+    <path d="M40 120 L40 160 L50 160 L50 130 L70 130 L70 120 L40 120 Z"
+          fill="#007ACC" />
+    <path d="M75 120 L75 160 L85 160 L85 140 L95 140 L95 160 L105 160 L105 120 L95 120 L95 130 L85 130 L85 120 L75 120 Z"
+          fill="#FFC600" />
+</svg>
