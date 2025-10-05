@@ -2,11 +2,11 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
   CallToolRequestSchema,
+  GetPromptRequestSchema,
+  ListPromptsRequestSchema,
   ListResourcesRequestSchema,
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
-  ListPromptsRequestSchema,
-  GetPromptRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import fetch from "node-fetch";
 
@@ -153,7 +153,7 @@ async function searchIdentities(query?: string, limit: number = 250): Promise<Id
       includes: ["id", "name", "email", "displayName", "firstName", "lastName", "manager", "department", "source"]
     }
   };
-  console.error("Searching identities with query:", searchBody);
+  console.error("Searching identities with query:", JSON.stringify(searchBody));
 
   const results = await sailpointRequest<Identity[]>("/v2025/search", "POST", searchBody);
   return results.slice(0, limit);
@@ -166,7 +166,7 @@ async function getIdentityById(id: string): Promise<Identity> {
 
 async function getIdentityAccounts(id: string): Promise<Account[]> {
   console.error("Fetching accounts for identity ID:", id);
-    return await sailpointRequest<Account[]>(`/beta/historical-identities/${id}/access-items?type=account`);
+  return await sailpointRequest<Account[]>(`/beta/historical-identities/${id}/access-items?type=account`);
 }
 
 async function getIdentityAccessProfiles(id: string): Promise<AccessProfile[]> {

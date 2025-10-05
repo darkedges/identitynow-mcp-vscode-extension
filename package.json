@@ -2,6 +2,8 @@
   "name": "identitynow-mcp",
   "displayName": "IdentityNow MCP",
   "description": "",
+  "publisher": "darkedges",
+  "license": "MIT",
   "type": "module",
   "version": "0.0.1",
   "engines": {
@@ -75,6 +77,7 @@
     "@typescript-eslint/parser": "^8.39.0",
     "@vscode/test-cli": "^0.0.11",
     "@vscode/test-electron": "^2.5.2",
+    "esbuild": "^0.25.10",
     "eslint": "^9.32.0",
     "typescript": "^5.9.2"
   }
