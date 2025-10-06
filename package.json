@@ -1,10 +1,11 @@
 {
   "name": "identitynow-mcp",
   "displayName": "IdentityNow MCP",
-  "description": "",
+  "description": "A simple MCP extension for SailPoint IdentityNow that provides basic idenntity role, access profile and accounts lookup.",
   "publisher": "darkedges",
   "license": "MIT",
-  "version": "0.0.1",
+  "version": "0.0.3",
+  "icon": "resources/logo.png",
   "engines": {
     "vscode": "^1.104.0"
   },
