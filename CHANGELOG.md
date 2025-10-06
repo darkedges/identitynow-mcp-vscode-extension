@@ -4,6 +4,6 @@
 
 - Initial release
 
-## v0.0.2
+## v0.0.2 / v0.0.3
 
-- Logo implemented
+- Logo implemented.
