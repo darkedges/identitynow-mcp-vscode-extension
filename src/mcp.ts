@@ -80,6 +80,47 @@ interface Account {
   disabled?: boolean;
 }
 
+interface IdentityProfile {
+  id: string;
+  name: string;
+  description?: string;
+  priority?: number;
+  authoritativeSource?: {
+    id: string;
+    name: string;
+  };
+  identityAttributeConfig?: {
+    enabled?: string[];
+    attributeTransforms?: AttributeTransform[];
+  };
+  created?: string;
+  modified?: string;
+}
+
+interface AttributeTransform {
+  identityAttribute: string;
+  transform: {
+    type: string;
+    name?: string;
+    description?: string;
+    expression?: string;
+    attributes?: any[];
+  };
+  isRequired?: boolean;
+}
+
+interface AttributeMapping {
+  profileName: string;
+  profileId: string;
+  targetAttribute: string;
+  transformType: string;
+  transformName: string;
+  sourceAttributes: string;
+  isRequired: boolean;
+  expression: string;
+  description: string;
+}
+
 // OAuth token management
 let accessToken: string | null = null;
 let tokenExpiry: number = 0;
@@ -212,6 +253,124 @@ async function searchRoles(query?: string): Promise<Role[]> {
   params.append("limit", "250");
 
   return await sailpointRequest<Role[]>(`/v2025/roles?${params.toString()}`);
+}
+
+// Identity Profile API functions
+async function getIdentityProfiles(): Promise<IdentityProfile[]> {
+  return await sailpointRequest<IdentityProfile[]>("/v3/identity-profiles");
+}
+
+async function getIdentityProfile(profileId: string): Promise<IdentityProfile> {
+  return await sailpointRequest<IdentityProfile>(`/v3/identity-profiles/${profileId}`);
+}
+
+async function searchIdentityProfiles(query?: string): Promise<IdentityProfile[]> {
+  const profiles = await getIdentityProfiles();
+
+  if (!query) {
+    return profiles;
+  }
+
+  const lowerQuery = query.toLowerCase();
+  return profiles.filter(profile =>
+    profile.name.toLowerCase().includes(lowerQuery) ||
+    (profile.description && profile.description.toLowerCase().includes(lowerQuery))
+  );
+}
+
+function formatAttributeMappings(profile: IdentityProfile): AttributeMapping[] {
+  const mappings: AttributeMapping[] = [];
+
+  // Process attribute transforms
+  if (profile.identityAttributeConfig && profile.identityAttributeConfig.attributeTransforms) {
+    profile.identityAttributeConfig.attributeTransforms.forEach(transform => {
+      const mapping: AttributeMapping = {
+        profileName: profile.name,
+        profileId: profile.id,
+        targetAttribute: transform.identityAttribute,
+        transformType: transform.transform?.type || 'N/A',
+        transformName: transform.transform?.name || 'N/A',
+        sourceAttributes: extractSourceAttributes(transform.transform),
+        isRequired: transform.isRequired || false,
+        expression: transform.transform?.expression || 'N/A',
+        description: transform.transform?.description || 'N/A'
+      };
+      mappings.push(mapping);
+    });
+  }
+
+  // Process enabled attributes (direct mappings)
+  if (profile.identityAttributeConfig && profile.identityAttributeConfig.enabled) {
+    profile.identityAttributeConfig.enabled.forEach(attr => {
+      // Check if this attribute doesn't already have a transform
+      const existingMapping = mappings.find(m => m.targetAttribute === attr);
+      if (!existingMapping) {
+        const mapping: AttributeMapping = {
+          profileName: profile.name,
+          profileId: profile.id,
+          targetAttribute: attr,
+          transformType: 'Direct Mapping',
+          transformName: 'N/A',
+          sourceAttributes: 'N/A',
+          isRequired: false,
+          expression: 'N/A',
+          description: 'Direct attribute mapping'
+        };
+        mappings.push(mapping);
+      }
+    });
+  }
+
+  return mappings;
+}
+
+function extractSourceAttributes(transform: any): string {
+  if (!transform || !transform.attributes) {
+    return 'N/A';
+  }
+
+  return transform.attributes.map((attr: any) => {
+    if (typeof attr === 'string') {
+      return attr;
+    }
+    if (attr.name) {
+      return attr.name;
+    }
+    if (attr.sourceName) {
+      return `${attr.sourceName}.${attr.attributeName}`;
+    }
+    return JSON.stringify(attr);
+  }).join(', ');
+}
+
+function formatMappingsAsTable(mappings: AttributeMapping[]): string {
+  if (mappings.length === 0) {
+    return 'No attribute mappings found';
+  }
+
+  const headers = ['Profile Name', 'Target Attribute', 'Transform Type', 'Source Attributes', 'Required', 'Expression'];
+  const rows = mappings.map(mapping => [
+    mapping.profileName,
+    mapping.targetAttribute,
+    mapping.transformType,
+    mapping.sourceAttributes,
+    mapping.isRequired ? 'Yes' : 'No',
+    mapping.expression.length > 50 ? mapping.expression.substring(0, 47) + '...' : mapping.expression
+  ]);
+
+  // Calculate column widths
+  const widths = headers.map((header, i) =>
+    Math.max(header.length, ...rows.map(row => row[i].length))
+  );
+
+  // Create table
+  const separator = '+' + widths.map(w => '-'.repeat(w + 2)).join('+') + '+';
+  const headerRow = '|' + headers.map((header, i) => ` ${header.padEnd(widths[i])} `).join('|') + '|';
+  const dataRows = rows.map(row =>
+    '|' + row.map((cell, i) => ` ${cell.padEnd(widths[i])} `).join('|') + '|'
+  ).join('\n');
+
+  return [separator, headerRow, separator, dataRows, separator].join('\n');
 }
 
 // Format identity as markdown
@@ -451,6 +610,56 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           required: ["identity_id"],
         },
       },
+      {
+        name: "get_identity_profiles",
+        description: "Get all identity profiles in IdentityNow",
+        inputSchema: {
+          type: "object",
+          properties: {
+            query: {
+              type: "string",
+              description: "Optional search query to filter profiles by name or description",
+            },
+          },
+        },
+      },
+      {
+        name: "get_identity_profile",
+        description: "Get detailed information about a specific identity profile by ID",
+        inputSchema: {
+          type: "object",
+          properties: {
+            profile_id: {
+              type: "string",
+              description: "The ID of the identity profile to retrieve",
+            },
+          },
+          required: ["profile_id"],
+        },
+      },
+      {
+        name: "extract_profile_attribute_mappings",
+        description: "Extract and format attribute mapping settings for identity profile(s)",
+        inputSchema: {
+          type: "object",
+          properties: {
+            profile_id: {
+              type: "string",
+              description: "Specific profile ID to extract (optional)",
+            },
+            profile_name: {
+              type: "string",
+              description: "Filter by profile name (partial match, optional)",
+            },
+            format: {
+              type: "string",
+              description: "Output format: 'table', 'json', or 'csv' (default: 'table')",
+              enum: ["table", "json", "csv"],
+              default: "table",
+            },
+          },
+        },
+      },
     ],
   };
 });
@@ -574,6 +783,115 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           {
             type: "text",
             text: JSON.stringify({ accessProfiles, roles }, null, 2),
+          },
+        ],
+      };
+    }
+
+    if (name === "get_identity_profiles") {
+      const query = args?.query as string | undefined;
+      const profiles = await searchIdentityProfiles(query);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(profiles, null, 2),
+          },
+        ],
+      };
+    }
+
+    if (name === "get_identity_profile") {
+      const profileId = args?.profile_id as string;
+      const profile = await getIdentityProfile(profileId);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(profile, null, 2),
+          },
+        ],
+      };
+    }
+
+    if (name === "extract_profile_attribute_mappings") {
+      const profileId = args?.profile_id as string | undefined;
+      const profileName = args?.profile_name as string | undefined;
+      const format = (args?.format as string) || "table";
+
+      let profiles: IdentityProfile[] = [];
+
+      if (profileId) {
+        const profile = await getIdentityProfile(profileId);
+        profiles = [profile];
+      } else {
+        profiles = await searchIdentityProfiles(profileName);
+      }
+
+      if (profiles.length === 0) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "No matching identity profiles found.",
+            },
+          ],
+        };
+      }
+
+      let allMappings: AttributeMapping[] = [];
+      for (const profile of profiles) {
+        const mappings = formatAttributeMappings(profile);
+        allMappings = allMappings.concat(mappings);
+      }
+
+      let output: string;
+      if (format === "json") {
+        output = JSON.stringify({
+          profileCount: profiles.length,
+          mappingCount: allMappings.length,
+          mappings: allMappings
+        }, null, 2);
+      } else if (format === "csv") {
+        if (allMappings.length === 0) {
+          output = "No attribute mappings found";
+        } else {
+          const headers = ['Profile Name', 'Profile ID', 'Target Attribute', 'Transform Type', 'Transform Name', 'Source Attributes', 'Required', 'Expression', 'Description'];
+          const csvLines = [headers.join(',')];
+
+          allMappings.forEach(mapping => {
+            const row = [
+              `"${mapping.profileName}"`,
+              `"${mapping.profileId}"`,
+              `"${mapping.targetAttribute}"`,
+              `"${mapping.transformType}"`,
+              `"${mapping.transformName}"`,
+              `"${mapping.sourceAttributes}"`,
+              `"${mapping.isRequired}"`,
+              `"${mapping.expression.replace(/"/g, '""')}"`,
+              `"${mapping.description.replace(/"/g, '""')}"`
+            ];
+            csvLines.push(row.join(','));
+          });
+
+          output = csvLines.join('\n');
+        }
+      } else {
+        // Default to table format
+        if (allMappings.length === 0) {
+          output = "No attribute mappings found";
+        } else {
+          output = `Found ${allMappings.length} attribute mappings across ${profiles.length} profile(s):\n\n${formatMappingsAsTable(allMappings)}`;
+        }
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: output,
           },
         ],
       };
