@@ -17,9 +17,9 @@ export function activate(context: vscode.ExtensionContext) {
           path.join(extensionPath, 'out', 'mcp.js')
         ],
         {
-          SAILPOINT_BASE_URL: config.get('baseUrl', ''),
-          SAILPOINT_CLIENT_ID: config.get('clientId', ''),
-          SAILPOINT_CLIENT_SECRET: config.get('clientSecret', '')
+          SAIL_BASE_URL: config.get('baseUrl', ''),
+          SAIL_CLIENT_ID: config.get('clientId', ''),
+          SAIL_CLIENT_SECRET: config.get('clientSecret', '')
         },
         '1.0.1'
       ));

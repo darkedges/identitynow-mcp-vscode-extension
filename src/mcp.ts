@@ -13,13 +13,13 @@ import {
 declare const fetch: typeof globalThis.fetch;
 
 // SailPoint API Configuration
-const SAILPOINT_BASE_URL = process.env.SAILPOINT_BASE_URL || "https://your-tenant.api.identitynow.com";
-const SAILPOINT_CLIENT_ID = process.env.SAILPOINT_CLIENT_ID || "";
-const SAILPOINT_CLIENT_SECRET = process.env.SAILPOINT_CLIENT_SECRET || "";
+const SAIL_BASE_URL = process.env.SAIL_BASE_URL || "https://your-tenant.api.identitynow.com";
+const SAIL_CLIENT_ID = process.env.SAIL_CLIENT_ID || "";
+const SAIL_CLIENT_SECRET = process.env.SAIL_CLIENT_SECRET || "";
 
-console.error("Using SailPoint Base URL:", SAILPOINT_BASE_URL);
-console.error("Using SailPoint Client Id:", SAILPOINT_CLIENT_ID);
-console.error("Using SailPoint Client Secret:", SAILPOINT_CLIENT_SECRET);
+console.error("Using SailPoint Base URL:", SAIL_BASE_URL);
+console.error("Using SailPoint Client Id:", SAIL_CLIENT_ID);
+console.error("Using SailPoint Client Secret:", SAIL_CLIENT_SECRET);
 interface Identity {
   id: string;
   name: string;
@@ -191,15 +191,15 @@ async function getAccessToken(): Promise<string> {
   }
 
   // Request new token
-  const response = await fetch(`${SAILPOINT_BASE_URL}/oauth/token`, {
+  const response = await fetch(`${SAIL_BASE_URL}/oauth/token`, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
     },
     body: new URLSearchParams({
       grant_type: "client_credentials",
-      client_id: SAILPOINT_CLIENT_ID,
-      client_secret: SAILPOINT_CLIENT_SECRET,
+      client_id: SAIL_CLIENT_ID,
+      client_secret: SAIL_CLIENT_SECRET,
     }),
   });
 
@@ -233,7 +233,7 @@ async function sailpointRequest<T>(
     options.body = JSON.stringify(body);
   }
 
-  const response = await fetch(`${SAILPOINT_BASE_URL}${endpoint}`, options);
+  const response = await fetch(`${SAIL_BASE_URL}${endpoint}`, options);
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -1644,8 +1644,8 @@ Use search_identities with appropriate filters.`,
 async function main() {
   try {
     // Validate configuration
-    if (!SAILPOINT_CLIENT_ID || !SAILPOINT_CLIENT_SECRET) {
-      throw new Error("SailPoint credentials not configured. Set SAILPOINT_CLIENT_ID and SAILPOINT_CLIENT_SECRET environment variables.");
+    if (!SAIL_CLIENT_ID || !SAIL_CLIENT_SECRET) {
+      throw new Error("SailPoint credentials not configured. Set SAIL_CLIENT_ID and SAIL_CLIENT_SECRET environment variables.");
     }
 
     // Test authentication
