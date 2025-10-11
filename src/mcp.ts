@@ -80,6 +80,28 @@ interface Account {
   disabled?: boolean;
 }
 
+interface Entitlement {
+  id: string;
+  name: string;
+  description?: string;
+  attribute?: string;
+  value?: string;
+  source?: {
+    id: string;
+    name: string;
+    type?: string;
+  };
+  schema?: string;
+  privileged?: boolean;
+  cloudGoverned?: boolean;
+  created?: string;
+  modified?: string;
+  synced?: string;
+  displayName?: string;
+  type?: string;
+  requestable?: boolean;
+}
+
 interface IdentityProfile {
   id: string;
   name: string;
@@ -119,6 +141,43 @@ interface AttributeMapping {
   isRequired: boolean;
   expression: string;
   description: string;
+}
+
+interface AuditEvent {
+  id: string;
+  created: string;
+  type: string;
+  action: string;
+  actor?: {
+    id: string;
+    name: string;
+    type: string;
+  };
+  target?: {
+    id: string;
+    name: string;
+    type: string;
+  };
+  source?: {
+    id: string;
+    name: string;
+  };
+  details?: any;
+  attributes?: Record<string, any>;
+  result?: 'SUCCESS' | 'FAILURE' | 'PENDING';
+}
+
+interface IdentityEvent {
+  timestamp: string;
+  eventType: string;
+  action: string;
+  itemType: string;
+  itemName: string;
+  itemId: string;
+  changeType: 'ADDED' | 'REMOVED' | 'MODIFIED';
+  actor?: string;
+  source?: string;
+  details?: string;
 }
 
 // OAuth token management
@@ -255,6 +314,32 @@ async function searchRoles(query?: string): Promise<Role[]> {
   return await sailpointRequest<Role[]>(`/v2025/roles?${params.toString()}`);
 }
 
+async function searchEntitlements(query?: string, limit: number = 250): Promise<Entitlement[]> {
+  const params = new URLSearchParams();
+  if (query) {
+    params.append("filters", `name co "${query}"`);
+  }
+  params.append("limit", limit.toString());
+
+  return await sailpointRequest<Entitlement[]>(`/beta/entitlements?${params.toString()}`);
+}
+
+async function getEntitlementById(id: string): Promise<Entitlement> {
+  return await sailpointRequest<Entitlement>(`/beta/entitlements/${id}`);
+}
+
+async function searchEntitlementsBySource(sourceId: string, query?: string, limit: number = 250): Promise<Entitlement[]> {
+  const params = new URLSearchParams();
+  params.append("filters", `source.id eq "${sourceId}"`);
+  
+  if (query) {
+    params.append("filters", `name co "${query}"`);
+  }
+  params.append("limit", limit.toString());
+
+  return await sailpointRequest<Entitlement[]>(`/beta/entitlements?${params.toString()}`);
+}
+
 // Identity Profile API functions
 async function getIdentityProfiles(): Promise<IdentityProfile[]> {
   return await sailpointRequest<IdentityProfile[]>("/v3/identity-profiles");
@@ -276,6 +361,210 @@ async function searchIdentityProfiles(query?: string): Promise<IdentityProfile[]
     profile.name.toLowerCase().includes(lowerQuery) ||
     (profile.description && profile.description.toLowerCase().includes(lowerQuery))
   );
+}
+
+// Event and Audit Log Functions
+async function searchAuditEvents(
+  identityId?: string,
+  startDate?: string,
+  endDate?: string,
+  eventTypes?: string[],
+  limit: number = 100
+): Promise<AuditEvent[]> {
+  const params = new URLSearchParams();
+
+  if (identityId) {
+    params.append('filters', `target.id eq "${identityId}"`);
+  }
+
+  if (startDate) {
+    params.append('filters', `created ge "${startDate}"`);
+  }
+
+  if (endDate) {
+    params.append('filters', `created le "${endDate}"`);
+  }
+
+  if (eventTypes && eventTypes.length > 0) {
+    const typeFilter = eventTypes.map(type => `type eq "${type}"`).join(' or ');
+    params.append('filters', `(${typeFilter})`);
+  }
+
+  params.append('limit', limit.toString());
+  params.append('sorters', '-created');
+
+  const query = params.toString();
+  return await sailpointRequest<AuditEvent[]>(`/beta/search/events?${query}`);
+}
+
+async function getIdentityEvents(
+  identityId: string,
+  daysBack: number = 30,
+  eventTypes: string[] = ['ROLE_ASSIGNED', 'ROLE_REMOVED', 'ACCESS_PROFILE_ASSIGNED', 'ACCESS_PROFILE_REMOVED', 'ENTITLEMENT_ASSIGNED', 'ENTITLEMENT_REMOVED']
+): Promise<IdentityEvent[]> {
+  const endDate = new Date();
+  const startDate = new Date(endDate.getTime() - (daysBack * 24 * 60 * 60 * 1000));
+
+  try {
+    const auditEvents = await searchAuditEvents(
+      identityId,
+      startDate.toISOString(),
+      endDate.toISOString(),
+      eventTypes,
+      500
+    );
+
+    return auditEvents.map(event => {
+      const identityEvent: IdentityEvent = {
+        timestamp: event.created,
+        eventType: event.type,
+        action: event.action,
+        itemType: determineItemType(event),
+        itemName: getItemName(event),
+        itemId: getItemId(event),
+        changeType: determineChangeType(event),
+        actor: event.actor?.name || 'System',
+        source: event.source?.name,
+        details: JSON.stringify(event.details || {})
+      };
+
+      return identityEvent;
+    }).filter(event => event.itemName !== 'Unknown');
+
+  } catch (error) {
+    console.error('Error fetching identity events:', error);
+    return [];
+  }
+}
+
+function determineItemType(event: AuditEvent): string {
+  if (event.type.includes('ROLE')) {
+    return 'Role';
+  }
+  if (event.type.includes('ACCESS_PROFILE')) {
+    return 'Access Profile';
+  }
+  if (event.type.includes('ENTITLEMENT')) {
+    return 'Entitlement';
+  }
+  if (event.type.includes('ACCOUNT')) {
+    return 'Account';
+  }
+  return event.type;
+}
+
+function getItemName(event: AuditEvent): string {
+  if (event.target?.name) {
+    return event.target.name;
+  }
+  if (event.details?.roleName) {
+    return event.details.roleName;
+  }
+  if (event.details?.accessProfileName) {
+    return event.details.accessProfileName;
+  }
+  if (event.details?.entitlementName) {
+    return event.details.entitlementName;
+  }
+  if (event.details?.accountName) {
+    return event.details.accountName;
+  }
+  if (event.details?.name) {
+    return event.details.name;
+  }
+  return 'Unknown';
+}
+
+function getItemId(event: AuditEvent): string {
+  if (event.target?.id) {
+    return event.target.id;
+  }
+  if (event.details?.roleId) {
+    return event.details.roleId;
+  }
+  if (event.details?.accessProfileId) {
+    return event.details.accessProfileId;
+  }
+  if (event.details?.entitlementId) {
+    return event.details.entitlementId;
+  }
+  if (event.details?.accountId) {
+    return event.details.accountId;
+  }
+  if (event.details?.id) {
+    return event.details.id;
+  }
+  return '';
+}
+
+function determineChangeType(event: AuditEvent): 'ADDED' | 'REMOVED' | 'MODIFIED' {
+  const action = event.action.toLowerCase();
+  const type = event.type.toLowerCase();
+
+  if (action.includes('assign') || action.includes('grant') || action.includes('add') ||
+    type.includes('assigned') || type.includes('granted')) {
+    return 'ADDED';
+  }
+
+  if (action.includes('remove') || action.includes('revoke') || action.includes('delete') ||
+    type.includes('removed') || type.includes('revoked')) {
+    return 'REMOVED';
+  }
+
+  return 'MODIFIED';
+}
+
+function formatIdentityEvents(events: IdentityEvent[]): string {
+  if (events.length === 0) {
+    return 'No events found for the specified time period.';
+  }
+
+  let output = `# Identity Access Change History\n\n`;
+  output += `Found ${events.length} events:\n\n`;
+
+  // Group events by date
+  const eventsByDate = events.reduce((groups, event) => {
+    const date = new Date(event.timestamp).toDateString();
+    if (!groups[date]) {
+      groups[date] = [];
+    }
+    groups[date].push(event);
+    return groups;
+  }, {} as Record<string, IdentityEvent[]>);
+
+  // Sort dates in descending order
+  const sortedDates = Object.keys(eventsByDate).sort((a, b) =>
+    new Date(b).getTime() - new Date(a).getTime()
+  );
+
+  for (const date of sortedDates) {
+    output += `## ${date}\n\n`;
+
+    const dayEvents = eventsByDate[date].sort((a, b) =>
+      new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
+
+    for (const event of dayEvents) {
+      const time = new Date(event.timestamp).toLocaleTimeString();
+      const changeIcon = event.changeType === 'ADDED' ? '✅' :
+        event.changeType === 'REMOVED' ? '❌' : '🔄';
+
+      output += `### ${changeIcon} ${time} - ${event.changeType} ${event.itemType}\n\n`;
+      output += `- **Item**: ${event.itemName}\n`;
+      output += `- **Action**: ${event.action}\n`;
+      output += `- **Actor**: ${event.actor}\n`;
+      if (event.source) {
+        output += `- **Source**: ${event.source}\n`;
+      }
+      output += `- **Event Type**: ${event.eventType}\n`;
+      if (event.details && event.details !== '{}') {
+        output += `- **Details**: ${event.details}\n`;
+      }
+      output += `\n`;
+    }
+  }
+
+  return output;
 }
 
 function formatAttributeMappings(profile: IdentityProfile): AttributeMapping[] {
@@ -597,6 +886,61 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
       {
+        name: "search_entitlements",
+        description: "Search for entitlements in SailPoint",
+        inputSchema: {
+          type: "object",
+          properties: {
+            query: {
+              type: "string",
+              description: "Search query for entitlements",
+            },
+            limit: {
+              type: "number",
+              description: "Maximum number of results to return (default: 250)",
+              default: 250,
+            },
+          },
+        },
+      },
+      {
+        name: "get_entitlement",
+        description: "Get detailed information about a specific entitlement by ID",
+        inputSchema: {
+          type: "object",
+          properties: {
+            entitlement_id: {
+              type: "string",
+              description: "ID of the entitlement to retrieve",
+            },
+          },
+          required: ["entitlement_id"],
+        },
+      },
+      {
+        name: "search_entitlements_by_source",
+        description: "Search for entitlements within a specific source system",
+        inputSchema: {
+          type: "object",
+          properties: {
+            source_id: {
+              type: "string",
+              description: "ID of the source system to search within",
+            },
+            query: {
+              type: "string",
+              description: "Search query for entitlements within the source (optional)",
+            },
+            limit: {
+              type: "number",
+              description: "Maximum number of results to return (default: 250)",
+              default: 250,
+            },
+          },
+          required: ["source_id"],
+        },
+      },
+      {
         name: "get_identity_access",
         description: "Get all access profiles and roles for an identity",
         inputSchema: {
@@ -656,6 +1000,71 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               description: "Output format: 'table', 'json', or 'csv' (default: 'table')",
               enum: ["table", "json", "csv"],
               default: "table",
+            },
+          },
+        },
+      },
+      {
+        name: "search_identity_events",
+        description: "Search for access change events (roles, access profiles, entitlements added/removed) for an identity",
+        inputSchema: {
+          type: "object",
+          properties: {
+            identity_id: {
+              type: "string",
+              description: "ID of the identity to search events for",
+            },
+            days_back: {
+              type: "number",
+              description: "Number of days back to search (default: 30)",
+              default: 30,
+            },
+            event_types: {
+              type: "array",
+              items: {
+                type: "string",
+              },
+              description: "Specific event types to search for (optional)",
+            },
+            format: {
+              type: "string",
+              description: "Output format: 'detailed' or 'summary' (default: 'detailed')",
+              enum: ["detailed", "summary"],
+              default: "detailed",
+            },
+          },
+          required: ["identity_id"],
+        },
+      },
+      {
+        name: "search_audit_events",
+        description: "Search audit events with flexible filtering options",
+        inputSchema: {
+          type: "object",
+          properties: {
+            identity_id: {
+              type: "string",
+              description: "ID of the identity to search events for (optional)",
+            },
+            start_date: {
+              type: "string",
+              description: "Start date in ISO format (e.g., '2024-01-01T00:00:00Z')",
+            },
+            end_date: {
+              type: "string",
+              description: "End date in ISO format (e.g., '2024-01-31T23:59:59Z')",
+            },
+            event_types: {
+              type: "array",
+              items: {
+                type: "string",
+              },
+              description: "Event types to filter by (e.g., ['ROLE_ASSIGNED', 'ACCESS_PROFILE_REMOVED'])",
+            },
+            limit: {
+              type: "number",
+              description: "Maximum number of events to return (default: 100)",
+              default: 100,
             },
           },
         },
@@ -765,6 +1174,61 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           {
             type: "text",
             text: JSON.stringify(roles, null, 2),
+          },
+        ],
+      };
+    }
+
+    if (name === "search_entitlements") {
+      const query = args?.query as string | undefined;
+      const limit = (args?.limit as number) || 250;
+      const entitlements = await searchEntitlements(query, limit);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(entitlements, null, 2),
+          },
+        ],
+      };
+    }
+
+    if (name === "get_entitlement") {
+      const entitlementId = args?.entitlement_id as string;
+
+      if (!entitlementId) {
+        throw new Error("entitlement_id is required");
+      }
+
+      const entitlement = await getEntitlementById(entitlementId);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(entitlement, null, 2),
+          },
+        ],
+      };
+    }
+
+    if (name === "search_entitlements_by_source") {
+      const sourceId = args?.source_id as string;
+      const query = args?.query as string | undefined;
+      const limit = (args?.limit as number) || 250;
+
+      if (!sourceId) {
+        throw new Error("source_id is required");
+      }
+
+      const entitlements = await searchEntitlementsBySource(sourceId, query, limit);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(entitlements, null, 2),
           },
         ],
       };
@@ -886,6 +1350,90 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           output = `Found ${allMappings.length} attribute mappings across ${profiles.length} profile(s):\n\n${formatMappingsAsTable(allMappings)}`;
         }
       }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: output,
+          },
+        ],
+      };
+    }
+
+    if (name === "search_identity_events") {
+      const identityId = args?.identity_id as string;
+      const daysBack = (args?.days_back as number) || 30;
+      const eventTypes = args?.event_types as string[] | undefined;
+      const format = (args?.format as string) || "detailed";
+
+      if (!identityId) {
+        throw new Error("identity_id is required");
+      }
+
+      const events = await getIdentityEvents(
+        identityId,
+        daysBack,
+        eventTypes || ['ROLE_ASSIGNED', 'ROLE_REMOVED', 'ACCESS_PROFILE_ASSIGNED', 'ACCESS_PROFILE_REMOVED', 'ENTITLEMENT_ASSIGNED', 'ENTITLEMENT_REMOVED']
+      );
+
+      let output: string;
+      if (format === "summary") {
+        const addedCount = events.filter(e => e.changeType === 'ADDED').length;
+        const removedCount = events.filter(e => e.changeType === 'REMOVED').length;
+        const modifiedCount = events.filter(e => e.changeType === 'MODIFIED').length;
+
+        output = `# Access Change Summary (Last ${daysBack} days)\n\n`;
+        output += `**Total Events**: ${events.length}\n`;
+        output += `**Items Added**: ${addedCount}\n`;
+        output += `**Items Removed**: ${removedCount}\n`;
+        output += `**Items Modified**: ${modifiedCount}\n\n`;
+
+        if (events.length > 0) {
+          output += `**Recent Changes**:\n`;
+          events.slice(0, 10).forEach(event => {
+            const changeIcon = event.changeType === 'ADDED' ? '✅' :
+              event.changeType === 'REMOVED' ? '❌' : '🔄';
+            output += `- ${changeIcon} ${event.changeType} ${event.itemType}: ${event.itemName}\n`;
+          });
+        }
+      } else {
+        output = formatIdentityEvents(events);
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: output,
+          },
+        ],
+      };
+    }
+
+    if (name === "search_audit_events") {
+      const identityId = args?.identity_id as string | undefined;
+      const startDate = args?.start_date as string | undefined;
+      const endDate = args?.end_date as string | undefined;
+      const eventTypes = args?.event_types as string[] | undefined;
+      const limit = (args?.limit as number) || 100;
+
+      const events = await searchAuditEvents(identityId, startDate, endDate, eventTypes, limit);
+
+      const output = JSON.stringify({
+        totalEvents: events.length,
+        events: events.map(event => ({
+          id: event.id,
+          created: event.created,
+          type: event.type,
+          action: event.action,
+          actor: event.actor?.name || 'System',
+          target: event.target?.name || 'Unknown',
+          source: event.source?.name,
+          result: event.result || 'UNKNOWN',
+          details: event.details
+        }))
+      }, null, 2);
 
       return {
         content: [
