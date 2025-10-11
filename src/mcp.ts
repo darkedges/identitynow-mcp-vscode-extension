@@ -331,7 +331,7 @@ async function getEntitlementById(id: string): Promise<Entitlement> {
 async function searchEntitlementsBySource(sourceId: string, query?: string, limit: number = 250): Promise<Entitlement[]> {
   const params = new URLSearchParams();
   params.append("filters", `source.id eq "${sourceId}"`);
-  
+
   if (query) {
     params.append("filters", `name co "${query}"`);
   }
