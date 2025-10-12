@@ -8,712 +8,11 @@ import {
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-
-// Declare fetch as global (available in Node.js 18+)
-declare const fetch: typeof globalThis.fetch;
-
-// SailPoint API Configuration
-const SAIL_BASE_URL = process.env.SAIL_BASE_URL || "https://your-tenant.api.identitynow.com";
-const SAIL_CLIENT_ID = process.env.SAIL_CLIENT_ID || "";
-const SAIL_CLIENT_SECRET = process.env.SAIL_CLIENT_SECRET || "";
-
-console.error("Using SailPoint Base URL:", SAIL_BASE_URL);
-console.error("Using SailPoint Client Id:", SAIL_CLIENT_ID);
-console.error("Using SailPoint Client Secret:", SAIL_CLIENT_SECRET);
-interface Identity {
-  id: string;
-  name: string;
-  email: string;
-  displayName?: string;
-  firstName?: string;
-  lastName?: string;
-  manager?: {
-    id: string;
-    name: string;
-  };
-  department?: string;
-  source?: {
-    id: string;
-    name: string;
-  };
-  accounts?: Array<{
-    id: string;
-    name: string;
-    source: string;
-  }>;
-  accessProfiles?: Array<{
-    id: string;
-    name: string;
-  }>;
-  roles?: Array<{
-    id: string;
-    name: string;
-  }>;
-}
-
-interface AccessProfile {
-  id: string;
-  name: string;
-  description?: string;
-  source?: {
-    id: string;
-    name: string;
-  };
-}
-
-interface Role {
-  id: string;
-  name: string;
-  description?: string;
-  owner?: {
-    id: string;
-    name: string;
-  };
-}
-
-interface Account {
-  id: string;
-  name: string;
-  identityId?: string;
-  sourceId?: string;
-  sourceName?: string;
-  disabled?: boolean;
-}
-
-interface Entitlement {
-  id: string;
-  name: string;
-  description?: string;
-  attribute?: string;
-  value?: string;
-  source?: {
-    id: string;
-    name: string;
-    type?: string;
-  };
-  schema?: string;
-  privileged?: boolean;
-  cloudGoverned?: boolean;
-  created?: string;
-  modified?: string;
-  synced?: string;
-  displayName?: string;
-  type?: string;
-  requestable?: boolean;
-}
-
-interface IdentityProfile {
-  id: string;
-  name: string;
-  description?: string;
-  priority?: number;
-  authoritativeSource?: {
-    id: string;
-    name: string;
-  };
-  identityAttributeConfig?: {
-    enabled?: string[];
-    attributeTransforms?: AttributeTransform[];
-  };
-  created?: string;
-  modified?: string;
-}
-
-interface AttributeTransform {
-  identityAttribute: string;
-  transform: {
-    type: string;
-    name?: string;
-    description?: string;
-    expression?: string;
-    attributes?: any[];
-  };
-  isRequired?: boolean;
-}
-
-interface AttributeMapping {
-  profileName: string;
-  profileId: string;
-  targetAttribute: string;
-  transformType: string;
-  transformName: string;
-  sourceAttributes: string;
-  isRequired: boolean;
-  expression: string;
-  description: string;
-}
-
-interface AuditEvent {
-  id: string;
-  created: string;
-  type: string;
-  action: string;
-  actor?: {
-    id: string;
-    name: string;
-    type: string;
-  };
-  target?: {
-    id: string;
-    name: string;
-    type: string;
-  };
-  source?: {
-    id: string;
-    name: string;
-  };
-  details?: any;
-  attributes?: Record<string, any>;
-  result?: 'SUCCESS' | 'FAILURE' | 'PENDING';
-}
-
-interface IdentityEvent {
-  timestamp: string;
-  eventType: string;
-  action: string;
-  itemType: string;
-  itemName: string;
-  itemId: string;
-  changeType: 'ADDED' | 'REMOVED' | 'MODIFIED';
-  actor?: string;
-  source?: string;
-  details?: string;
-}
-
-// OAuth token management
-let accessToken: string | null = null;
-let tokenExpiry: number = 0;
-
-async function getAccessToken(): Promise<string> {
-  // Return cached token if still valid
-  if (accessToken && Date.now() < tokenExpiry) {
-    return accessToken;
-  }
-
-  // Request new token
-  const response = await fetch(`${SAIL_BASE_URL}/oauth/token`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({
-      grant_type: "client_credentials",
-      client_id: SAIL_CLIENT_ID,
-      client_secret: SAIL_CLIENT_SECRET,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to authenticate: ${response.statusText}`);
-  }
-
-  const data = await response.json() as { access_token: string; expires_in: number };
-  accessToken = data.access_token;
-  tokenExpiry = Date.now() + (data.expires_in * 1000) - 60000; // Refresh 1 min early
-
-  return accessToken;
-}
-
-async function sailpointRequest<T>(
-  endpoint: string,
-  method: string = "GET",
-  body?: any
-): Promise<T> {
-  const token = await getAccessToken();
-
-  const options: any = {
-    method,
-    headers: {
-      "Authorization": `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-  };
-
-  if (body) {
-    options.body = JSON.stringify(body);
-  }
-
-  const response = await fetch(`${SAIL_BASE_URL}${endpoint}`, options);
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`SailPoint API error: ${response.status} ${response.statusText} - ${errorText}`);
-  }
-
-  return await response.json() as T;
-}
-
-// Helper functions for SailPoint API calls
-async function searchIdentities(query?: string, limit: number = 250): Promise<Identity[]> {
-  const searchBody = {
-    indices: ["identities"],
-    query: query ? {
-      query: query
-    } : undefined,
-    sort: ["name"],
-    queryResultFilter: {
-      includes: ["id", "name", "email", "displayName", "firstName", "lastName", "manager", "department", "source"]
-    }
-  };
-  console.error("Searching identities with query:", JSON.stringify(searchBody));
-
-  const results = await sailpointRequest<Identity[]>("/v2025/search", "POST", searchBody);
-  return results.slice(0, limit);
-}
-
-async function getIdentityById(id: string): Promise<Identity> {
-  console.error("Fetching identity by ID:", id);
-  return await sailpointRequest<Identity>(`/v2025/identities/${id}`);
-}
-
-async function getIdentityAccounts(id: string): Promise<Account[]> {
-  console.error("Fetching accounts for identity ID:", id);
-  return await sailpointRequest<Account[]>(`/beta/historical-identities/${id}/access-items?type=account`);
-}
-
-async function getIdentityAccessProfiles(id: string): Promise<AccessProfile[]> {
-  console.error("Fetching access profiles for identity ID:", id);
-  return await sailpointRequest<AccessProfile[]>(`/beta/historical-identities/${id}/access-items?type=access-profile`);
-}
-
-async function getIdentityRoles(id: string): Promise<Role[]> {
-  console.error("Fetching roles for identity ID:", id);
-  return await sailpointRequest<Role[]>(`/beta/historical-identities/${id}/access-items?type=role`);
-}
-
-async function searchAccounts(query?: string, limit: number = 250): Promise<Account[]> {
-  const searchBody = {
-    indices: ["accounts"],
-    query: query ? {
-      query: query
-    } : undefined,
-    sort: ["name"],
-  };
-
-  const results = await sailpointRequest<Account[]>("/v2025/search", "POST", searchBody);
-  return results.slice(0, limit);
-}
-
-async function searchAccessProfiles(query?: string): Promise<AccessProfile[]> {
-  const params = new URLSearchParams();
-  if (query) {
-    params.append("filters", `name co "${query}"`);
-  }
-  params.append("limit", "250");
-
-  return await sailpointRequest<AccessProfile[]>(`/v2025/access-profiles?${params.toString()}`);
-}
-
-async function searchRoles(query?: string): Promise<Role[]> {
-  const params = new URLSearchParams();
-  if (query) {
-    params.append("filters", `name co "${query}"`);
-  }
-  params.append("limit", "250");
-
-  return await sailpointRequest<Role[]>(`/v2025/roles?${params.toString()}`);
-}
-
-async function searchEntitlements(query?: string, limit: number = 250): Promise<Entitlement[]> {
-  const params = new URLSearchParams();
-  if (query) {
-    params.append("filters", `name co "${query}"`);
-  }
-  params.append("limit", limit.toString());
-
-  return await sailpointRequest<Entitlement[]>(`/beta/entitlements?${params.toString()}`);
-}
-
-async function getEntitlementById(id: string): Promise<Entitlement> {
-  return await sailpointRequest<Entitlement>(`/beta/entitlements/${id}`);
-}
-
-async function searchEntitlementsBySource(sourceId: string, query?: string, limit: number = 250): Promise<Entitlement[]> {
-  const params = new URLSearchParams();
-  params.append("filters", `source.id eq "${sourceId}"`);
-
-  if (query) {
-    params.append("filters", `name co "${query}"`);
-  }
-  params.append("limit", limit.toString());
-
-  return await sailpointRequest<Entitlement[]>(`/beta/entitlements?${params.toString()}`);
-}
-
-// Identity Profile API functions
-async function getIdentityProfiles(): Promise<IdentityProfile[]> {
-  return await sailpointRequest<IdentityProfile[]>("/v3/identity-profiles");
-}
-
-async function getIdentityProfile(profileId: string): Promise<IdentityProfile> {
-  return await sailpointRequest<IdentityProfile>(`/v3/identity-profiles/${profileId}`);
-}
-
-async function searchIdentityProfiles(query?: string): Promise<IdentityProfile[]> {
-  const profiles = await getIdentityProfiles();
-
-  if (!query) {
-    return profiles;
-  }
-
-  const lowerQuery = query.toLowerCase();
-  return profiles.filter(profile =>
-    profile.name.toLowerCase().includes(lowerQuery) ||
-    (profile.description && profile.description.toLowerCase().includes(lowerQuery))
-  );
-}
-
-// Event and Audit Log Functions
-async function searchAuditEvents(
-  identityId?: string,
-  startDate?: string,
-  endDate?: string,
-  eventTypes?: string[],
-  limit: number = 100
-): Promise<AuditEvent[]> {
-  const params = new URLSearchParams();
-
-  if (identityId) {
-    params.append('filters', `target.id eq "${identityId}"`);
-  }
-
-  if (startDate) {
-    params.append('filters', `created ge "${startDate}"`);
-  }
-
-  if (endDate) {
-    params.append('filters', `created le "${endDate}"`);
-  }
-
-  if (eventTypes && eventTypes.length > 0) {
-    const typeFilter = eventTypes.map(type => `type eq "${type}"`).join(' or ');
-    params.append('filters', `(${typeFilter})`);
-  }
-
-  params.append('limit', limit.toString());
-  params.append('sorters', '-created');
-
-  const query = params.toString();
-  return await sailpointRequest<AuditEvent[]>(`/beta/search/events?${query}`);
-}
-
-async function getIdentityEvents(
-  identityId: string,
-  daysBack: number = 30,
-  eventTypes: string[] = ['ROLE_ASSIGNED', 'ROLE_REMOVED', 'ACCESS_PROFILE_ASSIGNED', 'ACCESS_PROFILE_REMOVED', 'ENTITLEMENT_ASSIGNED', 'ENTITLEMENT_REMOVED']
-): Promise<IdentityEvent[]> {
-  const endDate = new Date();
-  const startDate = new Date(endDate.getTime() - (daysBack * 24 * 60 * 60 * 1000));
-
-  try {
-    const auditEvents = await searchAuditEvents(
-      identityId,
-      startDate.toISOString(),
-      endDate.toISOString(),
-      eventTypes,
-      500
-    );
-
-    return auditEvents.map(event => {
-      const identityEvent: IdentityEvent = {
-        timestamp: event.created,
-        eventType: event.type,
-        action: event.action,
-        itemType: determineItemType(event),
-        itemName: getItemName(event),
-        itemId: getItemId(event),
-        changeType: determineChangeType(event),
-        actor: event.actor?.name || 'System',
-        source: event.source?.name,
-        details: JSON.stringify(event.details || {})
-      };
-
-      return identityEvent;
-    }).filter(event => event.itemName !== 'Unknown');
-
-  } catch (error) {
-    console.error('Error fetching identity events:', error);
-    return [];
-  }
-}
-
-function determineItemType(event: AuditEvent): string {
-  if (event.type.includes('ROLE')) {
-    return 'Role';
-  }
-  if (event.type.includes('ACCESS_PROFILE')) {
-    return 'Access Profile';
-  }
-  if (event.type.includes('ENTITLEMENT')) {
-    return 'Entitlement';
-  }
-  if (event.type.includes('ACCOUNT')) {
-    return 'Account';
-  }
-  return event.type;
-}
-
-function getItemName(event: AuditEvent): string {
-  if (event.target?.name) {
-    return event.target.name;
-  }
-  if (event.details?.roleName) {
-    return event.details.roleName;
-  }
-  if (event.details?.accessProfileName) {
-    return event.details.accessProfileName;
-  }
-  if (event.details?.entitlementName) {
-    return event.details.entitlementName;
-  }
-  if (event.details?.accountName) {
-    return event.details.accountName;
-  }
-  if (event.details?.name) {
-    return event.details.name;
-  }
-  return 'Unknown';
-}
-
-function getItemId(event: AuditEvent): string {
-  if (event.target?.id) {
-    return event.target.id;
-  }
-  if (event.details?.roleId) {
-    return event.details.roleId;
-  }
-  if (event.details?.accessProfileId) {
-    return event.details.accessProfileId;
-  }
-  if (event.details?.entitlementId) {
-    return event.details.entitlementId;
-  }
-  if (event.details?.accountId) {
-    return event.details.accountId;
-  }
-  if (event.details?.id) {
-    return event.details.id;
-  }
-  return '';
-}
-
-function determineChangeType(event: AuditEvent): 'ADDED' | 'REMOVED' | 'MODIFIED' {
-  const action = event.action.toLowerCase();
-  const type = event.type.toLowerCase();
-
-  if (action.includes('assign') || action.includes('grant') || action.includes('add') ||
-    type.includes('assigned') || type.includes('granted')) {
-    return 'ADDED';
-  }
-
-  if (action.includes('remove') || action.includes('revoke') || action.includes('delete') ||
-    type.includes('removed') || type.includes('revoked')) {
-    return 'REMOVED';
-  }
-
-  return 'MODIFIED';
-}
-
-function formatIdentityEvents(events: IdentityEvent[]): string {
-  if (events.length === 0) {
-    return 'No events found for the specified time period.';
-  }
-
-  let output = `# Identity Access Change History\n\n`;
-  output += `Found ${events.length} events:\n\n`;
-
-  // Group events by date
-  const eventsByDate = events.reduce((groups, event) => {
-    const date = new Date(event.timestamp).toDateString();
-    if (!groups[date]) {
-      groups[date] = [];
-    }
-    groups[date].push(event);
-    return groups;
-  }, {} as Record<string, IdentityEvent[]>);
-
-  // Sort dates in descending order
-  const sortedDates = Object.keys(eventsByDate).sort((a, b) =>
-    new Date(b).getTime() - new Date(a).getTime()
-  );
-
-  for (const date of sortedDates) {
-    output += `## ${date}\n\n`;
-
-    const dayEvents = eventsByDate[date].sort((a, b) =>
-      new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-    );
-
-    for (const event of dayEvents) {
-      const time = new Date(event.timestamp).toLocaleTimeString();
-      const changeIcon = event.changeType === 'ADDED' ? '✅' :
-        event.changeType === 'REMOVED' ? '❌' : '🔄';
-
-      output += `### ${changeIcon} ${time} - ${event.changeType} ${event.itemType}\n\n`;
-      output += `- **Item**: ${event.itemName}\n`;
-      output += `- **Action**: ${event.action}\n`;
-      output += `- **Actor**: ${event.actor}\n`;
-      if (event.source) {
-        output += `- **Source**: ${event.source}\n`;
-      }
-      output += `- **Event Type**: ${event.eventType}\n`;
-      if (event.details && event.details !== '{}') {
-        output += `- **Details**: ${event.details}\n`;
-      }
-      output += `\n`;
-    }
-  }
-
-  return output;
-}
-
-function formatAttributeMappings(profile: IdentityProfile): AttributeMapping[] {
-  const mappings: AttributeMapping[] = [];
-
-  // Process attribute transforms
-  if (profile.identityAttributeConfig && profile.identityAttributeConfig.attributeTransforms) {
-    profile.identityAttributeConfig.attributeTransforms.forEach(transform => {
-      const mapping: AttributeMapping = {
-        profileName: profile.name,
-        profileId: profile.id,
-        targetAttribute: transform.identityAttribute,
-        transformType: transform.transform?.type || 'N/A',
-        transformName: transform.transform?.name || 'N/A',
-        sourceAttributes: extractSourceAttributes(transform.transform),
-        isRequired: transform.isRequired || false,
-        expression: transform.transform?.expression || 'N/A',
-        description: transform.transform?.description || 'N/A'
-      };
-      mappings.push(mapping);
-    });
-  }
-
-  // Process enabled attributes (direct mappings)
-  if (profile.identityAttributeConfig && profile.identityAttributeConfig.enabled) {
-    profile.identityAttributeConfig.enabled.forEach(attr => {
-      // Check if this attribute doesn't already have a transform
-      const existingMapping = mappings.find(m => m.targetAttribute === attr);
-      if (!existingMapping) {
-        const mapping: AttributeMapping = {
-          profileName: profile.name,
-          profileId: profile.id,
-          targetAttribute: attr,
-          transformType: 'Direct Mapping',
-          transformName: 'N/A',
-          sourceAttributes: 'N/A',
-          isRequired: false,
-          expression: 'N/A',
-          description: 'Direct attribute mapping'
-        };
-        mappings.push(mapping);
-      }
-    });
-  }
-
-  return mappings;
-}
-
-function extractSourceAttributes(transform: any): string {
-  if (!transform || !transform.attributes) {
-    return 'N/A';
-  }
-
-  return transform.attributes.map((attr: any) => {
-    if (typeof attr === 'string') {
-      return attr;
-    }
-    if (attr.name) {
-      return attr.name;
-    }
-    if (attr.sourceName) {
-      return `${attr.sourceName}.${attr.attributeName}`;
-    }
-    return JSON.stringify(attr);
-  }).join(', ');
-}
-
-function formatMappingsAsTable(mappings: AttributeMapping[]): string {
-  if (mappings.length === 0) {
-    return 'No attribute mappings found';
-  }
-
-  const headers = ['Profile Name', 'Target Attribute', 'Transform Type', 'Source Attributes', 'Required', 'Expression'];
-  const rows = mappings.map(mapping => [
-    mapping.profileName,
-    mapping.targetAttribute,
-    mapping.transformType,
-    mapping.sourceAttributes,
-    mapping.isRequired ? 'Yes' : 'No',
-    mapping.expression.length > 50 ? mapping.expression.substring(0, 47) + '...' : mapping.expression
-  ]);
-
-  // Calculate column widths
-  const widths = headers.map((header, i) =>
-    Math.max(header.length, ...rows.map(row => row[i].length))
-  );
-
-  // Create table
-  const separator = '+' + widths.map(w => '-'.repeat(w + 2)).join('+') + '+';
-  const headerRow = '|' + headers.map((header, i) => ` ${header.padEnd(widths[i])} `).join('|') + '|';
-  const dataRows = rows.map(row =>
-    '|' + row.map((cell, i) => ` ${cell.padEnd(widths[i])} `).join('|') + '|'
-  ).join('\n');
-
-  return [separator, headerRow, separator, dataRows, separator].join('\n');
-}
-
-// Format identity as markdown
-function formatIdentityAsMarkdown(identity: Identity, accounts?: Account[], accessProfiles?: AccessProfile[], roles?: Role[]): string {
-  let md = `# Identity: ${identity.name}\n\n`;
-
-  md += `## Basic Information\n\n`;
-  md += `- **ID**: ${identity.id}\n`;
-  md += `- **Display Name**: ${identity.displayName || 'N/A'}\n`;
-  md += `- **Email**: ${identity.email || 'N/A'}\n`;
-  md += `- **First Name**: ${identity.firstName || 'N/A'}\n`;
-  md += `- **Last Name**: ${identity.lastName || 'N/A'}\n`;
-  md += `- **Department**: ${identity.department || 'N/A'}\n`;
-
-  if (identity.manager) {
-    md += `- **Manager**: ${identity.manager.name} (${identity.manager.id})\n`;
-  }
-
-  if (identity.source) {
-    md += `- **Source**: ${identity.source.name} (${identity.source.id})\n`;
-  }
-
-  if (accounts && accounts.length > 0) {
-    md += `\n## Accounts (${accounts.length})\n\n`;
-    accounts.forEach(account => {
-      md += `- **${account.name}** - ${account.sourceName || account.sourceId}\n`;
-      if (account.disabled) {
-        md += `  - Status: DISABLED\n`;
-      }
-    });
-  }
-
-  if (accessProfiles && accessProfiles.length > 0) {
-    md += `\n## Access Profiles (${accessProfiles.length})\n\n`;
-    accessProfiles.forEach(profile => {
-      md += `- **${profile.name}**\n`;
-      if (profile.description) {
-        md += `  - ${profile.description}\n`;
-      }
-    });
-  }
-
-  if (roles && roles.length > 0) {
-    md += `\n## Roles (${roles.length})\n\n`;
-    roles.forEach(role => {
-      md += `- **${role.name}**\n`;
-      if (role.description) {
-        md += `  - ${role.description}\n`;
-      }
-    });
-  }
-
-  return md;
-}
+import * as IdentityNow from "./library/identitynow.js";
+import {
+  AttributeMapping,
+  IdentityProfile
+} from "./types/index.js";
 
 const server = new Server(
   {
@@ -732,7 +31,7 @@ const server = new Server(
 // List available resources (identities)
 server.setRequestHandler(ListResourcesRequestSchema, async () => {
   try {
-    const identities = await searchIdentities(undefined, 100);
+    const identities = await IdentityNow.searchIdentities(undefined, 100);
 
     return {
       resources: identities.map(identity => ({
@@ -760,12 +59,12 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   const identityId = match[1];
 
   try {
-    const identity = await getIdentityById(identityId);
-    const accounts = await getIdentityAccounts(identityId);
-    const accessProfiles = await getIdentityAccessProfiles(identityId);
-    const roles = await getIdentityRoles(identityId);
+    const identity = await IdentityNow.getIdentityById(identityId);
+    const accounts = await IdentityNow.getIdentityAccounts(identityId);
+    const accessProfiles = await IdentityNow.getIdentityAccessProfiles(identityId);
+    const roles = await IdentityNow.getIdentityRoles(identityId);
 
-    const markdown = formatIdentityAsMarkdown(identity, accounts, accessProfiles, roles);
+    const markdown = IdentityNow.formatIdentityAsMarkdown(identity, accounts, accessProfiles, roles);
 
     return {
       contents: [
@@ -1082,7 +381,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const query = args?.query as string | undefined;
       const limit = (args?.limit as number) || 50;
 
-      const identities = await searchIdentities(query, limit);
+      const identities = await IdentityNow.searchIdentities(query, limit);
 
       return {
         content: [
@@ -1099,16 +398,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const includeAccounts = args?.include_accounts !== false;
       const includeAccess = args?.include_access !== false;
 
-      const identity = await getIdentityById(identityId);
+      const identity = await IdentityNow.getIdentityById(identityId);
       const result: any = { ...identity };
 
       if (includeAccounts) {
-        result.accounts = await getIdentityAccounts(identityId);
+        result.accounts = await IdentityNow.getIdentityAccounts(identityId);
       }
 
       if (includeAccess) {
-        result.accessProfiles = await getIdentityAccessProfiles(identityId);
-        result.roles = await getIdentityRoles(identityId);
+        result.accessProfiles = await IdentityNow.getIdentityAccessProfiles(identityId);
+        result.roles = await IdentityNow.getIdentityRoles(identityId);
       }
 
       return {
@@ -1123,7 +422,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     if (name === "get_identity_accounts") {
       const identityId = args?.identity_id as string;
-      const accounts = await getIdentityAccounts(identityId);
+      const accounts = await IdentityNow.getIdentityAccounts(identityId);
 
       return {
         content: [
@@ -1139,7 +438,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const query = args?.query as string | undefined;
       const limit = (args?.limit as number) || 50;
 
-      const accounts = await searchAccounts(query, limit);
+      const accounts = await IdentityNow.searchAccounts(query, limit);
 
       return {
         content: [
@@ -1153,7 +452,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     if (name === "search_access_profiles") {
       const query = args?.query as string | undefined;
-      const profiles = await searchAccessProfiles(query);
+      const profiles = await IdentityNow.searchAccessProfiles(query);
 
       return {
         content: [
@@ -1167,7 +466,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     if (name === "search_roles") {
       const query = args?.query as string | undefined;
-      const roles = await searchRoles(query);
+      const roles = await IdentityNow.searchRoles(query);
 
       return {
         content: [
@@ -1182,7 +481,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     if (name === "search_entitlements") {
       const query = args?.query as string | undefined;
       const limit = (args?.limit as number) || 250;
-      const entitlements = await searchEntitlements(query, limit);
+      const entitlements = await IdentityNow.searchEntitlements(query, limit);
 
       return {
         content: [
@@ -1201,7 +500,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         throw new Error("entitlement_id is required");
       }
 
-      const entitlement = await getEntitlementById(entitlementId);
+      const entitlement = await IdentityNow.getEntitlementById(entitlementId);
 
       return {
         content: [
@@ -1222,7 +521,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         throw new Error("source_id is required");
       }
 
-      const entitlements = await searchEntitlementsBySource(sourceId, query, limit);
+      const entitlements = await IdentityNow.searchEntitlementsBySource(sourceId, query, limit);
 
       return {
         content: [
@@ -1238,8 +537,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const identityId = args?.identity_id as string;
 
       const [accessProfiles, roles] = await Promise.all([
-        getIdentityAccessProfiles(identityId),
-        getIdentityRoles(identityId)
+        IdentityNow.getIdentityAccessProfiles(identityId),
+        IdentityNow.getIdentityRoles(identityId)
       ]);
 
       return {
@@ -1254,7 +553,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     if (name === "get_identity_profiles") {
       const query = args?.query as string | undefined;
-      const profiles = await searchIdentityProfiles(query);
+      const profiles = await IdentityNow.searchIdentityProfiles(query);
 
       return {
         content: [
@@ -1268,7 +567,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     if (name === "get_identity_profile") {
       const profileId = args?.profile_id as string;
-      const profile = await getIdentityProfile(profileId);
+      const profile = await IdentityNow.getIdentityProfile(profileId);
 
       return {
         content: [
@@ -1288,10 +587,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       let profiles: IdentityProfile[] = [];
 
       if (profileId) {
-        const profile = await getIdentityProfile(profileId);
+        const profile = await IdentityNow.getIdentityProfile(profileId);
         profiles = [profile];
       } else {
-        profiles = await searchIdentityProfiles(profileName);
+        profiles = await IdentityNow.searchIdentityProfiles(profileName);
       }
 
       if (profiles.length === 0) {
@@ -1307,7 +606,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       let allMappings: AttributeMapping[] = [];
       for (const profile of profiles) {
-        const mappings = formatAttributeMappings(profile);
+        const mappings = IdentityNow.formatAttributeMappings(profile);
         allMappings = allMappings.concat(mappings);
       }
 
@@ -1347,7 +646,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         if (allMappings.length === 0) {
           output = "No attribute mappings found";
         } else {
-          output = `Found ${allMappings.length} attribute mappings across ${profiles.length} profile(s):\n\n${formatMappingsAsTable(allMappings)}`;
+          output = `Found ${allMappings.length} attribute mappings across ${profiles.length} profile(s):\n\n${IdentityNow.formatMappingsAsTable(allMappings)}`;
         }
       }
 
@@ -1371,7 +670,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         throw new Error("identity_id is required");
       }
 
-      const events = await getIdentityEvents(
+      const events = await IdentityNow.getIdentityEvents(
         identityId,
         daysBack,
         eventTypes || ['ROLE_ASSIGNED', 'ROLE_REMOVED', 'ACCESS_PROFILE_ASSIGNED', 'ACCESS_PROFILE_REMOVED', 'ENTITLEMENT_ASSIGNED', 'ENTITLEMENT_REMOVED']
@@ -1398,7 +697,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           });
         }
       } else {
-        output = formatIdentityEvents(events);
+        output = IdentityNow.formatIdentityEvents(events);
       }
 
       return {
@@ -1418,7 +717,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const eventTypes = args?.event_types as string[] | undefined;
       const limit = (args?.limit as number) || 100;
 
-      const events = await searchAuditEvents(identityId, startDate, endDate, eventTypes, limit);
+      const events = await IdentityNow.searchAuditEvents(identityId, startDate, endDate, eventTypes, limit);
 
       const output = JSON.stringify({
         totalEvents: events.length,
@@ -1643,14 +942,8 @@ Use search_identities with appropriate filters.`,
 // Start the server
 async function main() {
   try {
-    // Validate configuration
-    if (!SAIL_CLIENT_ID || !SAIL_CLIENT_SECRET) {
-      throw new Error("SailPoint credentials not configured. Set SAIL_CLIENT_ID and SAIL_CLIENT_SECRET environment variables.");
-    }
-
-    // Test authentication
-    await getAccessToken();
-    console.error("SailPoint authentication successful");
+    // Test connectivity
+    await IdentityNow.testConnectivity();
 
     const transport = new StdioServerTransport();
     await server.connect(transport);
