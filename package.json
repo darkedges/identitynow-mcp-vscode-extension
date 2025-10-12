@@ -4,7 +4,7 @@
   "description": "A simple MCP extension for SailPoint IdentityNow that provides basic idenntity role, access profile and accounts lookup.",
   "publisher": "darkedges",
   "license": "MIT",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "icon": "resources/logo.png",
   "engines": {
     "vscode": "^1.104.0"
@@ -60,7 +60,7 @@
     "compile": "npm run check-types && node esbuild.cjs",
     "check-types": "tsc --noEmit",
     "watch": "npm-run-all -p watch:*",
-    "watch:esbuild": "node esbuild.js --watch",
+    "watch:esbuild": "node esbuild.cjs --watch",
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
     "vscode:prepublish": "npm run package",
     "package": "npm run lint && npm run check-types && node esbuild.cjs --production",
@@ -69,7 +69,8 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "node-fetch": "^3.3.2"
+    "node-fetch": "^3.3.2",
+    "sailpoint-api-client": "^1.6.9"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",

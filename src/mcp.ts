@@ -8,264 +8,11 @@ import {
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-
-// Declare fetch as global (available in Node.js 18+)
-declare const fetch: typeof globalThis.fetch;
-
-// SailPoint API Configuration
-const SAILPOINT_BASE_URL = process.env.SAILPOINT_BASE_URL || "https://your-tenant.api.identitynow.com";
-const SAILPOINT_CLIENT_ID = process.env.SAILPOINT_CLIENT_ID || "";
-const SAILPOINT_CLIENT_SECRET = process.env.SAILPOINT_CLIENT_SECRET || "";
-
-console.error("Using SailPoint Base URL:", SAILPOINT_BASE_URL);
-console.error("Using SailPoint Client Id:", SAILPOINT_CLIENT_ID);
-console.error("Using SailPoint Client Secret:", SAILPOINT_CLIENT_SECRET);
-interface Identity {
-  id: string;
-  name: string;
-  email: string;
-  displayName?: string;
-  firstName?: string;
-  lastName?: string;
-  manager?: {
-    id: string;
-    name: string;
-  };
-  department?: string;
-  source?: {
-    id: string;
-    name: string;
-  };
-  accounts?: Array<{
-    id: string;
-    name: string;
-    source: string;
-  }>;
-  accessProfiles?: Array<{
-    id: string;
-    name: string;
-  }>;
-  roles?: Array<{
-    id: string;
-    name: string;
-  }>;
-}
-
-interface AccessProfile {
-  id: string;
-  name: string;
-  description?: string;
-  source?: {
-    id: string;
-    name: string;
-  };
-}
-
-interface Role {
-  id: string;
-  name: string;
-  description?: string;
-  owner?: {
-    id: string;
-    name: string;
-  };
-}
-
-interface Account {
-  id: string;
-  name: string;
-  identityId?: string;
-  sourceId?: string;
-  sourceName?: string;
-  disabled?: boolean;
-}
-
-// OAuth token management
-let accessToken: string | null = null;
-let tokenExpiry: number = 0;
-
-async function getAccessToken(): Promise<string> {
-  // Return cached token if still valid
-  if (accessToken && Date.now() < tokenExpiry) {
-    return accessToken;
-  }
-
-  // Request new token
-  const response = await fetch(`${SAILPOINT_BASE_URL}/oauth/token`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({
-      grant_type: "client_credentials",
-      client_id: SAILPOINT_CLIENT_ID,
-      client_secret: SAILPOINT_CLIENT_SECRET,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to authenticate: ${response.statusText}`);
-  }
-
-  const data = await response.json() as { access_token: string; expires_in: number };
-  accessToken = data.access_token;
-  tokenExpiry = Date.now() + (data.expires_in * 1000) - 60000; // Refresh 1 min early
-
-  return accessToken;
-}
-
-async function sailpointRequest<T>(
-  endpoint: string,
-  method: string = "GET",
-  body?: any
-): Promise<T> {
-  const token = await getAccessToken();
-
-  const options: any = {
-    method,
-    headers: {
-      "Authorization": `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-  };
-
-  if (body) {
-    options.body = JSON.stringify(body);
-  }
-
-  const response = await fetch(`${SAILPOINT_BASE_URL}${endpoint}`, options);
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`SailPoint API error: ${response.status} ${response.statusText} - ${errorText}`);
-  }
-
-  return await response.json() as T;
-}
-
-// Helper functions for SailPoint API calls
-async function searchIdentities(query?: string, limit: number = 250): Promise<Identity[]> {
-  const searchBody = {
-    indices: ["identities"],
-    query: query ? {
-      query: query
-    } : undefined,
-    sort: ["name"],
-    queryResultFilter: {
-      includes: ["id", "name", "email", "displayName", "firstName", "lastName", "manager", "department", "source"]
-    }
-  };
-  console.error("Searching identities with query:", JSON.stringify(searchBody));
-
-  const results = await sailpointRequest<Identity[]>("/v2025/search", "POST", searchBody);
-  return results.slice(0, limit);
-}
-
-async function getIdentityById(id: string): Promise<Identity> {
-  console.error("Fetching identity by ID:", id);
-  return await sailpointRequest<Identity>(`/v2025/identities/${id}`);
-}
-
-async function getIdentityAccounts(id: string): Promise<Account[]> {
-  console.error("Fetching accounts for identity ID:", id);
-  return await sailpointRequest<Account[]>(`/beta/historical-identities/${id}/access-items?type=account`);
-}
-
-async function getIdentityAccessProfiles(id: string): Promise<AccessProfile[]> {
-  console.error("Fetching access profiles for identity ID:", id);
-  return await sailpointRequest<AccessProfile[]>(`/beta/historical-identities/${id}/access-items?type=access-profile`);
-}
-
-async function getIdentityRoles(id: string): Promise<Role[]> {
-  console.error("Fetching roles for identity ID:", id);
-  return await sailpointRequest<Role[]>(`/beta/historical-identities/${id}/access-items?type=role`);
-}
-
-async function searchAccounts(query?: string, limit: number = 250): Promise<Account[]> {
-  const searchBody = {
-    indices: ["accounts"],
-    query: query ? {
-      query: query
-    } : undefined,
-    sort: ["name"],
-  };
-
-  const results = await sailpointRequest<Account[]>("/v2025/search", "POST", searchBody);
-  return results.slice(0, limit);
-}
-
-async function searchAccessProfiles(query?: string): Promise<AccessProfile[]> {
-  const params = new URLSearchParams();
-  if (query) {
-    params.append("filters", `name co "${query}"`);
-  }
-  params.append("limit", "250");
-
-  return await sailpointRequest<AccessProfile[]>(`/v2025/access-profiles?${params.toString()}`);
-}
-
-async function searchRoles(query?: string): Promise<Role[]> {
-  const params = new URLSearchParams();
-  if (query) {
-    params.append("filters", `name co "${query}"`);
-  }
-  params.append("limit", "250");
-
-  return await sailpointRequest<Role[]>(`/v2025/roles?${params.toString()}`);
-}
-
-// Format identity as markdown
-function formatIdentityAsMarkdown(identity: Identity, accounts?: Account[], accessProfiles?: AccessProfile[], roles?: Role[]): string {
-  let md = `# Identity: ${identity.name}\n\n`;
-
-  md += `## Basic Information\n\n`;
-  md += `- **ID**: ${identity.id}\n`;
-  md += `- **Display Name**: ${identity.displayName || 'N/A'}\n`;
-  md += `- **Email**: ${identity.email || 'N/A'}\n`;
-  md += `- **First Name**: ${identity.firstName || 'N/A'}\n`;
-  md += `- **Last Name**: ${identity.lastName || 'N/A'}\n`;
-  md += `- **Department**: ${identity.department || 'N/A'}\n`;
-
-  if (identity.manager) {
-    md += `- **Manager**: ${identity.manager.name} (${identity.manager.id})\n`;
-  }
-
-  if (identity.source) {
-    md += `- **Source**: ${identity.source.name} (${identity.source.id})\n`;
-  }
-
-  if (accounts && accounts.length > 0) {
-    md += `\n## Accounts (${accounts.length})\n\n`;
-    accounts.forEach(account => {
-      md += `- **${account.name}** - ${account.sourceName || account.sourceId}\n`;
-      if (account.disabled) {
-        md += `  - Status: DISABLED\n`;
-      }
-    });
-  }
-
-  if (accessProfiles && accessProfiles.length > 0) {
-    md += `\n## Access Profiles (${accessProfiles.length})\n\n`;
-    accessProfiles.forEach(profile => {
-      md += `- **${profile.name}**\n`;
-      if (profile.description) {
-        md += `  - ${profile.description}\n`;
-      }
-    });
-  }
-
-  if (roles && roles.length > 0) {
-    md += `\n## Roles (${roles.length})\n\n`;
-    roles.forEach(role => {
-      md += `- **${role.name}**\n`;
-      if (role.description) {
-        md += `  - ${role.description}\n`;
-      }
-    });
-  }
-
-  return md;
-}
+import * as IdentityNow from "./library/identitynow.js";
+import {
+  AttributeMapping,
+  IdentityProfile
+} from "./types/index.js";
 
 const server = new Server(
   {
@@ -284,7 +31,7 @@ const server = new Server(
 // List available resources (identities)
 server.setRequestHandler(ListResourcesRequestSchema, async () => {
   try {
-    const identities = await searchIdentities(undefined, 100);
+    const identities = await IdentityNow.searchIdentities(undefined, 100);
 
     return {
       resources: identities.map(identity => ({
@@ -312,12 +59,12 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   const identityId = match[1];
 
   try {
-    const identity = await getIdentityById(identityId);
-    const accounts = await getIdentityAccounts(identityId);
-    const accessProfiles = await getIdentityAccessProfiles(identityId);
-    const roles = await getIdentityRoles(identityId);
+    const identity = await IdentityNow.getIdentityById(identityId);
+    const accounts = await IdentityNow.getIdentityAccounts(identityId);
+    const accessProfiles = await IdentityNow.getIdentityAccessProfiles(identityId);
+    const roles = await IdentityNow.getIdentityRoles(identityId);
 
-    const markdown = formatIdentityAsMarkdown(identity, accounts, accessProfiles, roles);
+    const markdown = IdentityNow.formatIdentityAsMarkdown(identity, accounts, accessProfiles, roles);
 
     return {
       contents: [
@@ -438,6 +185,61 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
       {
+        name: "search_entitlements",
+        description: "Search for entitlements in SailPoint",
+        inputSchema: {
+          type: "object",
+          properties: {
+            query: {
+              type: "string",
+              description: "Search query for entitlements",
+            },
+            limit: {
+              type: "number",
+              description: "Maximum number of results to return (default: 250)",
+              default: 250,
+            },
+          },
+        },
+      },
+      {
+        name: "get_entitlement",
+        description: "Get detailed information about a specific entitlement by ID",
+        inputSchema: {
+          type: "object",
+          properties: {
+            entitlement_id: {
+              type: "string",
+              description: "ID of the entitlement to retrieve",
+            },
+          },
+          required: ["entitlement_id"],
+        },
+      },
+      {
+        name: "search_entitlements_by_source",
+        description: "Search for entitlements within a specific source system",
+        inputSchema: {
+          type: "object",
+          properties: {
+            source_id: {
+              type: "string",
+              description: "ID of the source system to search within",
+            },
+            query: {
+              type: "string",
+              description: "Search query for entitlements within the source (optional)",
+            },
+            limit: {
+              type: "number",
+              description: "Maximum number of results to return (default: 250)",
+              default: 250,
+            },
+          },
+          required: ["source_id"],
+        },
+      },
+      {
         name: "get_identity_access",
         description: "Get all access profiles and roles for an identity",
         inputSchema: {
@@ -449,6 +251,121 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
           },
           required: ["identity_id"],
+        },
+      },
+      {
+        name: "get_identity_profiles",
+        description: "Get all identity profiles in IdentityNow",
+        inputSchema: {
+          type: "object",
+          properties: {
+            query: {
+              type: "string",
+              description: "Optional search query to filter profiles by name or description",
+            },
+          },
+        },
+      },
+      {
+        name: "get_identity_profile",
+        description: "Get detailed information about a specific identity profile by ID",
+        inputSchema: {
+          type: "object",
+          properties: {
+            profile_id: {
+              type: "string",
+              description: "The ID of the identity profile to retrieve",
+            },
+          },
+          required: ["profile_id"],
+        },
+      },
+      {
+        name: "extract_profile_attribute_mappings",
+        description: "Extract and format attribute mapping settings for identity profile(s)",
+        inputSchema: {
+          type: "object",
+          properties: {
+            profile_id: {
+              type: "string",
+              description: "Specific profile ID to extract (optional)",
+            },
+            profile_name: {
+              type: "string",
+              description: "Filter by profile name (partial match, optional)",
+            },
+            format: {
+              type: "string",
+              description: "Output format: 'table', 'json', or 'csv' (default: 'table')",
+              enum: ["table", "json", "csv"],
+              default: "table",
+            },
+          },
+        },
+      },
+      {
+        name: "search_identity_events",
+        description: "Search for access change events (roles, access profiles, entitlements added/removed) for an identity",
+        inputSchema: {
+          type: "object",
+          properties: {
+            identity_id: {
+              type: "string",
+              description: "ID of the identity to search events for",
+            },
+            days_back: {
+              type: "number",
+              description: "Number of days back to search (default: 30)",
+              default: 30,
+            },
+            event_types: {
+              type: "array",
+              items: {
+                type: "string",
+              },
+              description: "Specific event types to search for (optional)",
+            },
+            format: {
+              type: "string",
+              description: "Output format: 'detailed' or 'summary' (default: 'detailed')",
+              enum: ["detailed", "summary"],
+              default: "detailed",
+            },
+          },
+          required: ["identity_id"],
+        },
+      },
+      {
+        name: "search_audit_events",
+        description: "Search audit events with flexible filtering options",
+        inputSchema: {
+          type: "object",
+          properties: {
+            identity_id: {
+              type: "string",
+              description: "ID of the identity to search events for (optional)",
+            },
+            start_date: {
+              type: "string",
+              description: "Start date in ISO format (e.g., '2024-01-01T00:00:00Z')",
+            },
+            end_date: {
+              type: "string",
+              description: "End date in ISO format (e.g., '2024-01-31T23:59:59Z')",
+            },
+            event_types: {
+              type: "array",
+              items: {
+                type: "string",
+              },
+              description: "Event types to filter by (e.g., ['ROLE_ASSIGNED', 'ACCESS_PROFILE_REMOVED'])",
+            },
+            limit: {
+              type: "number",
+              description: "Maximum number of events to return (default: 100)",
+              default: 100,
+            },
+          },
         },
       },
     ],
@@ -464,7 +381,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const query = args?.query as string | undefined;
       const limit = (args?.limit as number) || 50;
 
-      const identities = await searchIdentities(query, limit);
+      const identities = await IdentityNow.searchIdentities(query, limit);
 
       return {
         content: [
@@ -481,16 +398,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const includeAccounts = args?.include_accounts !== false;
       const includeAccess = args?.include_access !== false;
 
-      const identity = await getIdentityById(identityId);
+      const identity = await IdentityNow.getIdentityById(identityId);
       const result: any = { ...identity };
 
       if (includeAccounts) {
-        result.accounts = await getIdentityAccounts(identityId);
+        result.accounts = await IdentityNow.getIdentityAccounts(identityId);
       }
 
       if (includeAccess) {
-        result.accessProfiles = await getIdentityAccessProfiles(identityId);
-        result.roles = await getIdentityRoles(identityId);
+        result.accessProfiles = await IdentityNow.getIdentityAccessProfiles(identityId);
+        result.roles = await IdentityNow.getIdentityRoles(identityId);
       }
 
       return {
@@ -505,7 +422,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     if (name === "get_identity_accounts") {
       const identityId = args?.identity_id as string;
-      const accounts = await getIdentityAccounts(identityId);
+      const accounts = await IdentityNow.getIdentityAccounts(identityId);
 
       return {
         content: [
@@ -521,7 +438,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const query = args?.query as string | undefined;
       const limit = (args?.limit as number) || 50;
 
-      const accounts = await searchAccounts(query, limit);
+      const accounts = await IdentityNow.searchAccounts(query, limit);
 
       return {
         content: [
@@ -535,7 +452,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     if (name === "search_access_profiles") {
       const query = args?.query as string | undefined;
-      const profiles = await searchAccessProfiles(query);
+      const profiles = await IdentityNow.searchAccessProfiles(query);
 
       return {
         content: [
@@ -549,7 +466,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     if (name === "search_roles") {
       const query = args?.query as string | undefined;
-      const roles = await searchRoles(query);
+      const roles = await IdentityNow.searchRoles(query);
 
       return {
         content: [
@@ -561,12 +478,67 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     }
 
+    if (name === "search_entitlements") {
+      const query = args?.query as string | undefined;
+      const limit = (args?.limit as number) || 250;
+      const entitlements = await IdentityNow.searchEntitlements(query, limit);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(entitlements, null, 2),
+          },
+        ],
+      };
+    }
+
+    if (name === "get_entitlement") {
+      const entitlementId = args?.entitlement_id as string;
+
+      if (!entitlementId) {
+        throw new Error("entitlement_id is required");
+      }
+
+      const entitlement = await IdentityNow.getEntitlementById(entitlementId);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(entitlement, null, 2),
+          },
+        ],
+      };
+    }
+
+    if (name === "search_entitlements_by_source") {
+      const sourceId = args?.source_id as string;
+      const query = args?.query as string | undefined;
+      const limit = (args?.limit as number) || 250;
+
+      if (!sourceId) {
+        throw new Error("source_id is required");
+      }
+
+      const entitlements = await IdentityNow.searchEntitlementsBySource(sourceId, query, limit);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(entitlements, null, 2),
+          },
+        ],
+      };
+    }
+
     if (name === "get_identity_access") {
       const identityId = args?.identity_id as string;
 
       const [accessProfiles, roles] = await Promise.all([
-        getIdentityAccessProfiles(identityId),
-        getIdentityRoles(identityId)
+        IdentityNow.getIdentityAccessProfiles(identityId),
+        IdentityNow.getIdentityRoles(identityId)
       ]);
 
       return {
@@ -574,6 +546,199 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           {
             type: "text",
             text: JSON.stringify({ accessProfiles, roles }, null, 2),
+          },
+        ],
+      };
+    }
+
+    if (name === "get_identity_profiles") {
+      const query = args?.query as string | undefined;
+      const profiles = await IdentityNow.searchIdentityProfiles(query);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(profiles, null, 2),
+          },
+        ],
+      };
+    }
+
+    if (name === "get_identity_profile") {
+      const profileId = args?.profile_id as string;
+      const profile = await IdentityNow.getIdentityProfile(profileId);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(profile, null, 2),
+          },
+        ],
+      };
+    }
+
+    if (name === "extract_profile_attribute_mappings") {
+      const profileId = args?.profile_id as string | undefined;
+      const profileName = args?.profile_name as string | undefined;
+      const format = (args?.format as string) || "table";
+
+      let profiles: IdentityProfile[] = [];
+
+      if (profileId) {
+        const profile = await IdentityNow.getIdentityProfile(profileId);
+        profiles = [profile];
+      } else {
+        profiles = await IdentityNow.searchIdentityProfiles(profileName);
+      }
+
+      if (profiles.length === 0) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "No matching identity profiles found.",
+            },
+          ],
+        };
+      }
+
+      let allMappings: AttributeMapping[] = [];
+      for (const profile of profiles) {
+        const mappings = IdentityNow.formatAttributeMappings(profile);
+        allMappings = allMappings.concat(mappings);
+      }
+
+      let output: string;
+      if (format === "json") {
+        output = JSON.stringify({
+          profileCount: profiles.length,
+          mappingCount: allMappings.length,
+          mappings: allMappings
+        }, null, 2);
+      } else if (format === "csv") {
+        if (allMappings.length === 0) {
+          output = "No attribute mappings found";
+        } else {
+          const headers = ['Profile Name', 'Profile ID', 'Target Attribute', 'Transform Type', 'Transform Name', 'Source Attributes', 'Required', 'Expression', 'Description'];
+          const csvLines = [headers.join(',')];
+
+          allMappings.forEach(mapping => {
+            const row = [
+              `"${mapping.profileName}"`,
+              `"${mapping.profileId}"`,
+              `"${mapping.targetAttribute}"`,
+              `"${mapping.transformType}"`,
+              `"${mapping.transformName}"`,
+              `"${mapping.sourceAttributes}"`,
+              `"${mapping.isRequired}"`,
+              `"${mapping.expression.replace(/"/g, '""')}"`,
+              `"${mapping.description.replace(/"/g, '""')}"`
+            ];
+            csvLines.push(row.join(','));
+          });
+
+          output = csvLines.join('\n');
+        }
+      } else {
+        // Default to table format
+        if (allMappings.length === 0) {
+          output = "No attribute mappings found";
+        } else {
+          output = `Found ${allMappings.length} attribute mappings across ${profiles.length} profile(s):\n\n${IdentityNow.formatMappingsAsTable(allMappings)}`;
+        }
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: output,
+          },
+        ],
+      };
+    }
+
+    if (name === "search_identity_events") {
+      const identityId = args?.identity_id as string;
+      const daysBack = (args?.days_back as number) || 30;
+      const eventTypes = args?.event_types as string[] | undefined;
+      const format = (args?.format as string) || "detailed";
+
+      if (!identityId) {
+        throw new Error("identity_id is required");
+      }
+
+      const events = await IdentityNow.getIdentityEvents(
+        identityId,
+        daysBack,
+        eventTypes || ['ROLE_ASSIGNED', 'ROLE_REMOVED', 'ACCESS_PROFILE_ASSIGNED', 'ACCESS_PROFILE_REMOVED', 'ENTITLEMENT_ASSIGNED', 'ENTITLEMENT_REMOVED']
+      );
+
+      let output: string;
+      if (format === "summary") {
+        const addedCount = events.filter(e => e.changeType === 'ADDED').length;
+        const removedCount = events.filter(e => e.changeType === 'REMOVED').length;
+        const modifiedCount = events.filter(e => e.changeType === 'MODIFIED').length;
+
+        output = `# Access Change Summary (Last ${daysBack} days)\n\n`;
+        output += `**Total Events**: ${events.length}\n`;
+        output += `**Items Added**: ${addedCount}\n`;
+        output += `**Items Removed**: ${removedCount}\n`;
+        output += `**Items Modified**: ${modifiedCount}\n\n`;
+
+        if (events.length > 0) {
+          output += `**Recent Changes**:\n`;
+          events.slice(0, 10).forEach(event => {
+            const changeIcon = event.changeType === 'ADDED' ? '✅' :
+              event.changeType === 'REMOVED' ? '❌' : '🔄';
+            output += `- ${changeIcon} ${event.changeType} ${event.itemType}: ${event.itemName}\n`;
+          });
+        }
+      } else {
+        output = IdentityNow.formatIdentityEvents(events);
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: output,
+          },
+        ],
+      };
+    }
+
+    if (name === "search_audit_events") {
+      const identityId = args?.identity_id as string | undefined;
+      const startDate = args?.start_date as string | undefined;
+      const endDate = args?.end_date as string | undefined;
+      const eventTypes = args?.event_types as string[] | undefined;
+      const limit = (args?.limit as number) || 100;
+
+      const events = await IdentityNow.searchAuditEvents(identityId, startDate, endDate, eventTypes, limit);
+
+      const output = JSON.stringify({
+        totalEvents: events.length,
+        events: events.map(event => ({
+          id: event.id,
+          created: event.created,
+          type: event.type,
+          action: event.action,
+          actor: event.actor?.name || 'System',
+          target: event.target?.name || 'Unknown',
+          source: event.source?.name,
+          result: event.result || 'UNKNOWN',
+          details: event.details
+        }))
+      }, null, 2);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: output,
           },
         ],
       };
@@ -777,14 +942,8 @@ Use search_identities with appropriate filters.`,
 // Start the server
 async function main() {
   try {
-    // Validate configuration
-    if (!SAILPOINT_CLIENT_ID || !SAILPOINT_CLIENT_SECRET) {
-      throw new Error("SailPoint credentials not configured. Set SAILPOINT_CLIENT_ID and SAILPOINT_CLIENT_SECRET environment variables.");
-    }
-
-    // Test authentication
-    await getAccessToken();
-    console.error("SailPoint authentication successful");
+    // Test connectivity
+    await IdentityNow.testConnectivity();
 
     const transport = new StdioServerTransport();
     await server.connect(transport);
