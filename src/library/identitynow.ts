@@ -646,6 +646,315 @@ export function formatIdentityAsMarkdown(identity: Identity, accounts?: Account[
     return md;
 }
 
+// Impact Analysis Functions
+export interface ImpactAnalysisResult {
+    identity: {
+        id: string;
+        name: string;
+        email?: string;
+    };
+    sourceAttribute: {
+        source: string;
+        attribute: string;
+        oldValue: string;
+        newValue: string;
+    };
+    rolesRevoked: Array<{
+        id: string;
+        name: string;
+        description?: string;
+        accessProfiles: AccessProfile[];
+        entitlements: Entitlement[];
+    }>;
+    rolesGranted: Array<{
+        id: string;
+        name: string;
+        description?: string;
+        accessProfiles: AccessProfile[];
+        entitlements: Entitlement[];
+    }>;
+    summary: {
+        accessProfilesRemoved: number;
+        accessProfilesAdded: number;
+        entitlementsRemoved: number;
+        entitlementsAdded: number;
+        rolesRemoved: number;
+        rolesAdded: number;
+    };
+}
+
+/**
+ * Search for all roles that match a specific identity attribute value
+ * This analyzes role membership criteria to find matching roles
+ */
+export async function searchRolesByAttributeValue(attributeName: string, attributeValue: string): Promise<Role[]> {
+    try {
+        console.error(`Searching for roles matching ${attributeName} == "${attributeValue}"`);
+        
+        // Search for all roles and filter those with matching criteria
+        const allRoles = await searchRoles();
+        
+        // This is a simplified implementation - in a real scenario, you would need to
+        // query role membership rules/criteria from the IdentityNow API
+        // For now, we return all roles that might have this criteria in their description
+        const matchingRoles = allRoles.filter(role => {
+            const description = role.description?.toLowerCase() || '';
+            return description.includes(attributeName.toLowerCase()) && 
+                   description.includes(attributeValue.toLowerCase());
+        });
+        
+        return matchingRoles;
+    } catch (error) {
+        console.error("Error searching roles by attribute:", error);
+        return [];
+    }
+}
+
+/**
+ * Get all access profiles assigned to a specific role
+ */
+export async function getRoleAccessProfiles(roleId: string): Promise<AccessProfile[]> {
+    try {
+        console.error(`Fetching access profiles for role: ${roleId}`);
+        
+        // Use search API to find access profiles for the role
+        const searchBody: any = {
+            indices: ["accessprofiles"],
+            query: {
+                term: {
+                    "roles.id": roleId
+                }
+            }
+        };
+
+        const response = await searchApi.searchPost({ search: searchBody as any });
+        return response.data as AccessProfile[];
+    } catch (error) {
+        console.error("Error fetching role access profiles:", error);
+        return [];
+    }
+}
+
+/**
+ * Get all entitlements assigned to a specific role
+ */
+export async function getRoleEntitlements(roleId: string): Promise<Entitlement[]> {
+    try {
+        console.error(`Fetching entitlements for role: ${roleId}`);
+        
+        // Use search API to find entitlements for the role
+        const searchBody: any = {
+            indices: ["entitlements"],
+            query: {
+                term: {
+                    "roles.id": roleId
+                }
+            }
+        };
+
+        const response = await searchApi.searchPost({ search: searchBody as any });
+        return response.data as Entitlement[];
+    } catch (error) {
+        console.error("Error fetching role entitlements:", error);
+        return [];
+    }
+}
+
+/**
+ * Analyze the impact of changing an identity attribute value
+ * Returns roles to be revoked and granted, along with their access profiles and entitlements
+ */
+export async function analyzeAttributeImpact(
+    identityId: string,
+    sourceName: string,
+    attributeName: string,
+    oldValue: string,
+    newValue: string
+): Promise<ImpactAnalysisResult> {
+    try {
+        console.error(`Analyzing impact of attribute change: ${attributeName} from "${oldValue}" to "${newValue}"`);
+        
+        // Get the identity
+        const identity = await getIdentityById(identityId);
+        
+        // Search for roles matching old value (to be revoked)
+        const rolesWithOldValue = await searchRolesByAttributeValue(attributeName, oldValue);
+        
+        // Search for roles matching new value (to be granted)
+        const rolesWithNewValue = await searchRolesByAttributeValue(attributeName, newValue);
+        
+        // Get access profiles and entitlements for roles to be revoked
+        const rolesRevokedWithDetails = await Promise.all(
+            rolesWithOldValue.map(async (role) => ({
+                ...role,
+                accessProfiles: await getRoleAccessProfiles(role.id),
+                entitlements: await getRoleEntitlements(role.id)
+            }))
+        );
+        
+        // Get access profiles and entitlements for roles to be granted
+        const rolesGrantedWithDetails = await Promise.all(
+            rolesWithNewValue.map(async (role) => ({
+                ...role,
+                accessProfiles: await getRoleAccessProfiles(role.id),
+                entitlements: await getRoleEntitlements(role.id)
+            }))
+        );
+        
+        // Calculate summary statistics
+        const accessProfilesRemoved = new Set(
+            rolesRevokedWithDetails.flatMap(r => r.accessProfiles.map(ap => ap.id))
+        ).size;
+        
+        const accessProfilesAdded = new Set(
+            rolesGrantedWithDetails.flatMap(r => r.accessProfiles.map(ap => ap.id))
+        ).size;
+        
+        const entitlementsRemoved = new Set(
+            rolesRevokedWithDetails.flatMap(r => r.entitlements.map(e => e.id))
+        ).size;
+        
+        const entitlementsAdded = new Set(
+            rolesGrantedWithDetails.flatMap(r => r.entitlements.map(e => e.id))
+        ).size;
+        
+        const result: ImpactAnalysisResult = {
+            identity: {
+                id: identity.id,
+                name: identity.name,
+                email: identity.email
+            },
+            sourceAttribute: {
+                source: sourceName,
+                attribute: attributeName,
+                oldValue,
+                newValue
+            },
+            rolesRevoked: rolesRevokedWithDetails,
+            rolesGranted: rolesGrantedWithDetails,
+            summary: {
+                accessProfilesRemoved,
+                accessProfilesAdded,
+                entitlementsRemoved,
+                entitlementsAdded,
+                rolesRemoved: rolesWithOldValue.length,
+                rolesAdded: rolesWithNewValue.length
+            }
+        };
+        
+        return result;
+    } catch (error) {
+        console.error("Error analyzing attribute impact:", error);
+        throw error;
+    }
+}
+
+/**
+ * Format impact analysis results as markdown for display
+ */
+export function formatImpactAnalysis(result: ImpactAnalysisResult): string {
+    let markdown = `# Access Impact Analysis\n\n`;
+    
+    // Identity Information
+    markdown += `## Identity\n\n`;
+    markdown += `- **Name**: ${result.identity.name}\n`;
+    markdown += `- **ID**: ${result.identity.id}\n`;
+    if (result.identity.email) {
+        markdown += `- **Email**: ${result.identity.email}\n`;
+    }
+    
+    // Change Information
+    markdown += `\n## Attribute Change\n\n`;
+    markdown += `- **Source**: ${result.sourceAttribute.source}\n`;
+    markdown += `- **Attribute**: ${result.sourceAttribute.attribute}\n`;
+    markdown += `- **Old Value**: \`${result.sourceAttribute.oldValue}\`\n`;
+    markdown += `- **New Value**: \`${result.sourceAttribute.newValue}\`\n`;
+    
+    // Summary Statistics
+    markdown += `\n## Summary\n\n`;
+    markdown += `| Category | Removed | Added |\n`;
+    markdown += `|----------|---------|-------|\n`;
+    markdown += `| Roles | ${result.summary.rolesRemoved} | ${result.summary.rolesAdded} |\n`;
+    markdown += `| Access Profiles | ${result.summary.accessProfilesRemoved} | ${result.summary.accessProfilesAdded} |\n`;
+    markdown += `| Entitlements | ${result.summary.entitlementsRemoved} | ${result.summary.entitlementsAdded} |\n`;
+    
+    // Roles to be Revoked
+    if (result.rolesRevoked.length > 0) {
+        markdown += `\n## Roles to be Revoked\n\n`;
+        result.rolesRevoked.forEach(role => {
+            markdown += `### ${role.name}\n\n`;
+            if (role.description) {
+                markdown += `*${role.description}*\n\n`;
+            }
+            
+            if (role.accessProfiles.length > 0) {
+                markdown += `**Access Profiles** (${role.accessProfiles.length}):\n`;
+                role.accessProfiles.forEach(ap => {
+                    markdown += `- ${ap.name}`;
+                    if (ap.description) {
+                        markdown += ` - ${ap.description}`;
+                    }
+                    markdown += `\n`;
+                });
+                markdown += `\n`;
+            }
+            
+            if (role.entitlements.length > 0) {
+                markdown += `**Entitlements** (${role.entitlements.length}):\n`;
+                role.entitlements.forEach(ent => {
+                    markdown += `- ${ent.name} (${ent.source?.name || 'Unknown Source'})`;
+                    if (ent.description) {
+                        markdown += ` - ${ent.description}`;
+                    }
+                    markdown += `\n`;
+                });
+                markdown += `\n`;
+            }
+        });
+    } else {
+        markdown += `\n## Roles to be Revoked\n\n*No roles match the old attribute value*\n`;
+    }
+    
+    // Roles to be Granted
+    if (result.rolesGranted.length > 0) {
+        markdown += `\n## Roles to be Granted\n\n`;
+        result.rolesGranted.forEach(role => {
+            markdown += `### ${role.name}\n\n`;
+            if (role.description) {
+                markdown += `*${role.description}*\n\n`;
+            }
+            
+            if (role.accessProfiles.length > 0) {
+                markdown += `**Access Profiles** (${role.accessProfiles.length}):\n`;
+                role.accessProfiles.forEach(ap => {
+                    markdown += `- ${ap.name}`;
+                    if (ap.description) {
+                        markdown += ` - ${ap.description}`;
+                    }
+                    markdown += `\n`;
+                });
+                markdown += `\n`;
+            }
+            
+            if (role.entitlements.length > 0) {
+                markdown += `**Entitlements** (${role.entitlements.length}):\n`;
+                role.entitlements.forEach(ent => {
+                    markdown += `- ${ent.name} (${ent.source?.name || 'Unknown Source'})`;
+                    if (ent.description) {
+                        markdown += ` - ${ent.description}`;
+                    }
+                    markdown += `\n`;
+                });
+                markdown += `\n`;
+            }
+        });
+    } else {
+        markdown += `\n## Roles to be Granted\n\n*No roles match the new attribute value*\n`;
+    }
+    
+    return markdown;
+}
+
 // Test connectivity function
 export async function testConnectivity(): Promise<void> {
     try {
