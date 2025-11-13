@@ -744,6 +744,33 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     }
 
+    if (name === "analyze_attribute_impact") {
+      const identityId = args?.identity_id as string;
+      const sourceName = args?.source_name as string;
+      const attributeName = args?.attribute_name as string;
+      const oldValue = args?.old_value as string;
+      const newValue = args?.new_value as string;
+
+      const result = await IdentityNow.analyzeAttributeImpact(
+        identityId,
+        sourceName,
+        attributeName,
+        oldValue,
+        newValue
+      );
+
+      const markdown = IdentityNow.formatImpactAnalysis(result);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: markdown,
+          },
+        ],
+      };
+    }
+
     throw new Error(`Unknown tool: ${name}`);
   } catch (error) {
     return {
@@ -815,6 +842,36 @@ server.setRequestHandler(ListPromptsRequestSchema, async () => {
             required: true,
           },
         ],
+      },
+      {
+        name: "analyze_attribute_impact",
+        description: "Analyze the access impact when an identity's source attribute changes. Returns roles to be revoked and granted, along with their access profiles and entitlements.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            identity_id: {
+              type: "string",
+              description: "The ID of the identity being analyzed",
+            },
+            source_name: {
+              type: "string",
+              description: "The name of the source system (e.g., 'workday', 'active-directory')",
+            },
+            attribute_name: {
+              type: "string",
+              description: "The name of the attribute being changed (e.g., 'department', 'location', 'job_title')",
+            },
+            old_value: {
+              type: "string",
+              description: "The current/old value of the attribute",
+            },
+            new_value: {
+              type: "string",
+              description: "The new value of the attribute",
+            },
+          },
+          required: ["identity_id", "source_name", "attribute_name", "old_value", "new_value"],
+        },
       },
     ],
   };
