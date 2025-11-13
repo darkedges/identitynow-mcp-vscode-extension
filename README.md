@@ -38,6 +38,14 @@ The IdentityNow MCP extension bridges the gap between AI assistants and SailPoin
 - **Search Audit Events**: Retrieve audit trail information
 - **Audit User Access**: Comprehensive access review for specific users
 
+### Impact Analysis
+
+- **Analyze Attribute Impact**: Analyze access changes resulting from source attribute value changes
+  - Identify roles to be revoked when an attribute changes
+  - Identify roles to be granted with the new attribute value
+  - Get comprehensive impact summary with access profile and entitlement details
+  - Perfect for pre-change analysis, compliance validation, and access certification
+
 ### Identity Profiles
 
 - **Get Identity Profiles**: List all identity profiles in your tenant
@@ -142,6 +150,57 @@ const identities = await IdentityNow.searchIdentities('test query');
 - Credentials are stored securely in VS Code settings
 - The extension uses the official SailPoint TypeScript SDK for authentication
 - No sensitive data is logged or stored locally
+
+## Impact Analysis Tool
+
+The Impact Analysis Tool helps you understand the access implications before making changes to identity attributes. This is particularly useful for:
+
+- **Pre-change analysis**: See what access will be added/removed before making the change
+- **Compliance validation**: Ensure changes comply with segregation of duties and other policies
+- **Access certification**: Validate that access levels match role expectations
+- **Risk assessment**: Identify potentially problematic access changes
+
+### Using the Impact Analysis Tool
+
+Ask Claude (or your AI assistant):
+
+```console
+"Analyze the access impact for [identity_name] (ID: [identity_id]) 
+when their [attribute] changes from '[old_value]' to '[new_value]' 
+in [source_system]."
+```
+
+The tool will return a detailed analysis including:
+
+- All roles that match the old attribute value (to be revoked)
+- All roles that match the new attribute value (to be granted)
+- Associated access profiles for each role
+- Associated entitlements from each access profile
+- Summary statistics of the changes
+
+### Example Scenarios
+
+#### Department Change
+
+```console
+"Analyze access impact for John Smith moving from Sales to Engineering department"
+```
+
+#### Promotion
+
+```console
+"What access changes when Sarah Chen is promoted from Coordinator to Manager?"
+```
+
+#### Relocation
+
+```console
+"Show access changes if Jane Doe relocates from New York to San Francisco"
+```
+
+For detailed examples and use cases, see [docs/IMPACT_ANALYSIS_EXAMPLES.md](IMPACT_ANALYSIS_EXAMPLES.md).
+
+For complete technical documentation, see [docs/IMPACT_ANALYSIS.md](IMPACT_ANALYSIS.md).
 
 ## Contributing
 

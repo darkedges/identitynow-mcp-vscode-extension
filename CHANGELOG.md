@@ -5,6 +5,34 @@ All notable changes to the "IdentityNow MCP" extension will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [UNRELEASED]
+
+### Added
+
+- **Impact Analysis Tool**: Comprehensive access impact analysis for identity attribute changes
+  - New tool: `analyze_attribute_impact` - Analyzes access changes when source attributes change
+  - Shows roles to be revoked (old attribute value matches)
+  - Shows roles to be granted (new attribute value matches)
+  - Lists associated access profiles and entitlements
+  - Provides summary statistics and professional Markdown output
+  - Perfect for pre-change analysis, compliance validation, and access certification
+  - New library functions:
+    - `searchRolesByAttributeValue()` - Find roles matching an attribute value
+    - `getRoleAccessProfiles()` - Get access profiles for a role
+    - `getRoleEntitlements()` - Get entitlements for a role
+    - `analyzeAttributeImpact()` - Main orchestration function
+    - `formatImpactAnalysis()` - Format results as Markdown
+
+### Documentation
+
+- New comprehensive documentation files:
+  - `IMPACT_ANALYSIS.md` - Complete technical reference for the impact analysis tool
+  - `IMPACT_ANALYSIS_EXAMPLES.md` - Practical usage examples and scenarios
+  - `TEST_IMPACT_ANALYSIS.sh` - Testing guide with test scenarios and validation checklist
+  - `IMPLEMENTATION_SUMMARY.md` - Implementation details and feature overview
+  - `DELIVERY_SUMMARY.md` - Quick reference guide for getting started
+- Updated `README.md` with Impact Analysis tool information and usage examples
+
 ## [0.0.4] - 2025-10-12
 
 ### Added
